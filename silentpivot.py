@@ -3,6 +3,7 @@ import socket
 from datetime import datetime
 from modules.scanner import NetworkScanner
 from modules.ai_engine import SilentAI
+from modules.vuln_checker import VulnChecker
 from rich.console import Console
 from rich.markdown import Markdown
 
@@ -10,7 +11,8 @@ console = Console()
 
 
 def main():
-    console.print("\n[bold green]=== silentpivot ===[/bold green]\n")
+    # Senin belirlediğin özel yeşil başlık formatı
+    console.print("\n[bold green]=== SilentPivot ===[/bold green]\n")
     target = input("Hedef IP veya Domain girin (Örn: scanme.nmap.org): ")
 
     # Menü Tasarımı
@@ -21,9 +23,9 @@ def main():
 
     scan_type = input("\nSeçiminiz (1/2/3) [Varsayılan: 2]: ")
     if scan_type not in ["1", "2", "3"]:
-        scan_type = "2"  # Yanlış girişte varsayılan olarak 2'yi seç
+        scan_type = "2"
 
-    # 1. Tarama Aşaması
+    # 1. Nmap Tarama Aşaması
     scanner = NetworkScanner()
     results = scanner.scan_target(target, scan_type)
 
@@ -31,16 +33,21 @@ def main():
         console.print("[bold red]Hedefte açık port bulunamadı veya hedef ayakta değil.[/bold red]")
         return
 
-    # 2. AI Analiz Aşaması
-    console.print("\n[bold yellow]Tarama tamamlandı! Veriler AI analizine gönderiliyor...[/bold yellow]\n")
-    ai = SilentAI()
-    analysis = ai.analyze_results(results)
+    # 2. CVE Veritabanı Sorgulama Aşaması
+    console.print("\n[bold yellow]NVD Veritabanında bilinen zafiyetler (CVE) aranıyor...[/bold yellow]")
+    vuln_checker = VulnChecker()
+    enriched_results = vuln_checker.check_vulnerabilities(results)
 
-    # 3. Sonuç Raporu (Ekrana Yazdırma)
+    # 3. AI Analiz Aşaması
+    console.print("[bold yellow]Veriler yapay zeka analizine gönderiliyor...[/bold yellow]\n")
+    ai = SilentAI()
+    analysis = ai.analyze_results(enriched_results)
+
+    # 4. Sonuç Raporu (Senin belirlediğin özel cyan başlık formatı)
     console.print("\n[bold cyan]--- PENTEST RAPORU ---[/bold cyan]\n")
     console.print(Markdown(analysis))
 
-    # 4. Raporu Kaydetme
+    # 5. Raporu Kaydetme
     console.print("[yellow]Rapor dosyaya kaydediliyor...[/yellow]")
     try:
         ip_address = socket.gethostbyname(target)
@@ -57,7 +64,7 @@ def main():
     dosya_yolu = os.path.join("data", dosya_adi)
 
     with open(dosya_yolu, "w", encoding="utf-8") as dosya:
-        dosya.write(f"# silentpivot Pentest Raporu\n")
+        dosya.write(f"# SilentPivot Pentest Raporu\n")
         dosya.write(f"**Hedef:** {target}\n")
         dosya.write(f"**Tarama Türü:** Seviye {scan_type}\n")
         dosya.write(f"**Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
