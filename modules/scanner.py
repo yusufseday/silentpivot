@@ -10,10 +10,19 @@ class NetworkScanner:
             print("Hata: Nmap sistemde bulunamadı. Lütfen Nmap'in kurulu olduğundan emin ol.")
             sys.exit(1)
 
-    def scan_target(self, target):
-        print(f"[!] {target} üzerinde tarama başlatılıyor (Bu işlem birkaç dakika sürebilir)...")
-        # -sV: Versiyon tespiti, -T4: Hızlı tarama
-        self.nm.scan(target, arguments='-p 1-1000 -sV -T4')
+    def scan_target(self, target, scan_type="2"):
+        # Seçime göre Nmap parametrelerini belirliyoruz
+        if scan_type == "1":
+            print(f"[!] {target} üzerinde Hızlı Tarama (Top 100 Port) başlatılıyor...")
+            nmap_args = '-F -T4'
+        elif scan_type == "3":
+            print(f"[!] {target} üzerinde Derin Tarama (Tüm Portlar) başlatılıyor (Bu işlem uzun sürebilir!)...")
+            nmap_args = '-p- -sV -O -T4'
+        else:
+            print(f"[!] {target} üzerinde Standart Tarama (Top 1000 Port + Servisler) başlatılıyor...")
+            nmap_args = '-p 1-1000 -sV -T4'
+
+        self.nm.scan(target, arguments=nmap_args)
 
         scan_results = []
         for host in self.nm.all_hosts():
