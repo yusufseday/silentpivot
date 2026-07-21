@@ -105,8 +105,15 @@ def run_autopilot_cli(args):
     if not args.quiet:
         console.print()
         print_summary_table(report["findings"])
-        if report["nuclei"]:
-            ui.info(f"Nuclei: {len(report['nuclei'])} findings")
+        # Stage transparency: show what web + nuclei produced (details in the report file)
+        ui.info(f"Web endpoints probed: {len(report['web'])}")
+        for w in report["web"]:
+            tech = ", ".join(w.get("tech") or []) or "-"
+            waf = ", ".join(w.get("waf") or []) or "-"
+            console.print(f"    [cyan]{w['url']}[/cyan] [{w['status']}] "
+                          f"tech={tech} waf={waf}")
+        crit_high = sum(1 for f in report["nuclei"] if f["severity"] in ("CRITICAL", "HIGH"))
+        ui.info(f"Nuclei findings: {len(report['nuclei'])} ({crit_high} critical/high)")
         if report.get("ai_analysis"):
             console.print("\n[bold cyan]--- ENGAGEMENT REPORT ---[/bold cyan]\n")
             console.print(Markdown(report["ai_analysis"]))
