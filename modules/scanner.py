@@ -22,7 +22,14 @@ class NetworkScanner:
             print(f"[!] {target} üzerinde Standart Tarama (Top 1000 Port + Servisler) başlatılıyor...")
             nmap_args = '-p 1-1000 -sV -T4'
 
-        self.nm.scan(target, arguments=nmap_args)
+        try:
+            self.nm.scan(target, arguments=nmap_args)
+        except nmap.PortScannerError as e:
+            print(f"[!] Tarama hatası: {e}")
+            return []
+        except Exception as e:
+            print(f"[!] Hedef taranamadı ({target}): {e}")
+            return []
 
         scan_results = []
         for host in self.nm.all_hosts():
@@ -30,10 +37,16 @@ class NetworkScanner:
                 ports = self.nm[host][proto].keys()
                 for port in ports:
                     service = self.nm[host][proto][port]
+                    # Nmap -sV çoğu zaman CPE ve ürün adını da döndürür;
+                    # bunlar CVE eşleştirmesinde versiyondan çok daha isabetlidir.
+                    cpe = service.get('cpe', '')
+                    product = service.get('product', '')
                     scan_results.append({
                         "port": port,
                         "service": service.get('name', 'Bilinmiyor'),
+                        "product": product if product else 'Bilinmiyor',
                         "version": service.get('version', 'Bilinmiyor'),
+                        "cpe": cpe if cpe else '',
                         "state": service.get('state', 'Bilinmiyor')
                     })
         return scan_results

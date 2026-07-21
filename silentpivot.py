@@ -6,8 +6,48 @@ from modules.ai_engine import SilentAI
 from modules.vuln_checker import VulnChecker
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.table import Table
 
 console = Console()
+
+# CVSS severity -> renk eşlemesi (rich stilleri)
+SEVERITY_COLORS = {
+    "CRITICAL": "bold red",
+    "HIGH": "red",
+    "MEDIUM": "yellow",
+    "LOW": "green",
+    "UNKNOWN": "dim",
+}
+
+
+def print_summary_table(results):
+    """Açık portları ve doğrulanmış en yüksek CVE riskini renkli tabloda göster."""
+    table = Table(title="Tarama Özeti", show_lines=False)
+    table.add_column("Port", justify="right", style="cyan")
+    table.add_column("Servis", style="white")
+    table.add_column("Versiyon", style="white")
+    table.add_column("CVE Sayısı", justify="right")
+    table.add_column("En Yüksek Risk")
+
+    for r in results:
+        cves = r.get("cves", []) or []
+        if cves:
+            worst = max(
+                cves,
+                key=lambda c: c["cvss"] if isinstance(c.get("cvss"), (int, float)) else -1,
+            )
+            sev = worst.get("severity", "UNKNOWN")
+            risk = f"[{SEVERITY_COLORS.get(sev, 'dim')}]{sev} ({worst.get('cvss')})[/]"
+        else:
+            risk = "[dim]—[/dim]"
+        table.add_row(
+            str(r.get("port", "?")),
+            r.get("service", "?"),
+            r.get("version", "?"),
+            str(len(cves)),
+            risk,
+        )
+    console.print(table)
 
 
 def main():
@@ -37,6 +77,10 @@ def main():
     console.print("\n[bold yellow]NVD Veritabanında bilinen zafiyetler (CVE) aranıyor...[/bold yellow]")
     vuln_checker = VulnChecker()
     enriched_results = vuln_checker.check_vulnerabilities(results)
+
+    # Doğrulanmış bulguları AI'dan önce hızlı bir özet tablosunda göster
+    console.print()
+    print_summary_table(enriched_results)
 
     # 3. AI Analiz Aşaması
     console.print("[bold yellow]Veriler yapay zeka analizine gönderiliyor...[/bold yellow]\n")

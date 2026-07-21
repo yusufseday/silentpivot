@@ -18,15 +18,23 @@ class SilentAI:
         model_name = "llama-3.3-70b-versatile"
 
         prompt = f"""
-        Sen bir Senior Penetration Tester'sın. Aşağıdaki Nmap tarama verisini incele:
-        {json.dumps(scan_data, indent=2)}
+        Sen bir Senior Penetration Tester'sın. Aşağıdaki Nmap tarama verisi ve
+        NVD (NIST) veritabanından DOĞRULANMIŞ CVE listesi verilmiştir:
+        {json.dumps(scan_data, indent=2, ensure_ascii=False)}
 
-        Şu analizi yap:
-        1. Açık portların risklerini ve olası zafiyetleri (CVE'ler) belirt.
-        2. Bu hedefe sızmak için kullanılabilecek araçları (Metasploit vb.) ve exploit stratejisini yaz.
-        3. Sistemin güvenliğini artırmak için çözüm önerileri sun.
+        ÖNEMLİ KURALLAR:
+        - 'cve_data' ve 'cves' alanlarındaki CVE'ler gerçek ve doğrulanmıştır.
+          SADECE bu doğrulanmış CVE'leri referans al; kendin yeni CVE numarası UYDURMA.
+        - Doğrulanmış CVE yoksa bunu açıkça belirt ve servis/versiyona göre
+          genel risk değerlendirmesi yap (spesifik CVE numarası verme).
 
-        Yanıtı profesyonel bir siber güvenlik raporu formatında, Türkçe ve Markdown kullanarak ver.
+        Raporu şu başlıklarla, Türkçe ve Markdown formatında hazırla:
+        1. **Yönetici Özeti** — En kritik bulgular ve genel risk seviyesi (CVSS'e göre).
+        2. **Bulgular** — Her açık port için: servis/versiyon, doğrulanmış CVE'ler,
+           CVSS skoru ve pratikteki risk açıklaması.
+        3. **Exploit Stratejisi** — Önceliklendirilmiş, kullanılabilecek araçlar
+           (Metasploit, searchsploit vb.) ve saldırı vektörleri.
+        4. **Sertleştirme (Hardening) Önerileri** — Somut, uygulanabilir çözümler.
         """
 
         try:
