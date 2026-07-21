@@ -58,6 +58,8 @@ def build_parser():
     p.add_argument("-t", "--target", help="Target IP or domain")
     p.add_argument("-s", "--scan-type", default="2",
                    help="Scan type: 1/fast, 2/standard, 3/deep (default: 2)")
+    p.add_argument("--auto", action="store_true",
+                   help="Autopilot: full engagement pipeline (nmap+web+nuclei+CVE+AI)")
     p.add_argument("--no-ai", action="store_true", help="Skip AI analysis (scan + CVE only)")
     p.add_argument("-o", "--output", help="Report file path (default: auto under data/)")
     p.add_argument("-f", "--format", default="md", choices=["md", "json"],
@@ -87,9 +89,41 @@ def run_cli(args):
         ui.success(f"Report saved: {path}")
 
 
+def run_autopilot_cli(args):
+    from modules.autopilot import run_autopilot
+    scan_type = SCAN_ALIASES.get(str(args.scan_type).lower())
+    if scan_type is None:
+        ui.error(f"Invalid scan type: {args.scan_type}")
+        sys.exit(2)
+
+    log = (lambda m: None) if args.quiet else ui.info
+    report = run_autopilot(args.target, scan_type, use_ai=not args.no_ai, log=log)
+    if report is None:
+        ui.error("No open ports found, or the host is down.")
+        sys.exit(1)
+
+    if not args.quiet:
+        console.print()
+        print_summary_table(report["findings"])
+        if report["nuclei"]:
+            ui.info(f"Nuclei: {len(report['nuclei'])} findings")
+        if report.get("ai_analysis"):
+            console.print("\n[bold cyan]--- ENGAGEMENT REPORT ---[/bold cyan]\n")
+            console.print(Markdown(report["ai_analysis"]))
+
+    if not args.no_save:
+        path = reporter.save_report(report, fmt=args.format, output_path=args.output)
+        ui.success(f"Unified report saved: {path}")
+
+
 def main():
     args = build_parser().parse_args()
-    if args.target:
+    if args.auto:
+        if not args.target:
+            ui.error("--auto requires a target (-t).")
+            sys.exit(2)
+        run_autopilot_cli(args)
+    elif args.target:
         run_cli(args)  # arguments given -> automation/CLI mode
     else:
         # No arguments -> interactive command center

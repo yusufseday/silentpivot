@@ -23,7 +23,8 @@ def _worst_cve(cves):
     )
 
 
-def build_report_data(target, scan_type, results, analysis=None):
+def build_report_data(target, scan_type, results, analysis=None,
+                      web=None, nuclei=None, nuclei_meta=None):
     """The single structured data model every output format is built from."""
     try:
         ip = socket.gethostbyname(target)
@@ -41,8 +42,16 @@ def build_report_data(target, scan_type, results, analysis=None):
         "open_ports": len(results),
         "kev_count": kev_count,
         "findings": results,
+        "web": web or [],
+        "nuclei": nuclei or [],
+        "nuclei_meta": nuclei_meta or {},
         "ai_analysis": analysis,
     }
+
+
+def _md_cell(value):
+    """Escape a value for a Markdown table cell (pipes, newlines)."""
+    return str(value).replace("|", "\\|").replace("\n", " ").strip()
 
 
 def to_json(report):
@@ -84,6 +93,43 @@ def to_markdown(report):
             f"| {r.get('port')} | {r.get('service')} | {r.get('version')} "
             f"| {len(cves)} | {risk} | {epss_str} | {kev} | {exploit} |"
         )
+
+    # Web fingerprint section
+    if report.get("web"):
+        lines += [
+            "", "## Web Fingerprint", "",
+            "| URL | Code | Title | Server | Tech | WAF/CDN |",
+            "|-----|------|-------|--------|------|---------|",
+        ]
+        for w in report["web"]:
+            lines.append(
+                f"| {_md_cell(w.get('url'))} | {w.get('status')} "
+                f"| {_md_cell(w.get('title') or '-')} | {_md_cell(w.get('server') or '-')} "
+                f"| {_md_cell(', '.join(w.get('tech') or []) or '-')} "
+                f"| {_md_cell(', '.join(w.get('waf') or []) or '-')} |"
+            )
+
+    # Nuclei findings section
+    if report.get("nuclei"):
+        counts = {}
+        for f in report["nuclei"]:
+            counts[f["severity"]] = counts.get(f["severity"], 0) + 1
+        summary = ", ".join(
+            f"{s}: {counts[s]}" for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+            if counts.get(s)
+        )
+        lines += [
+            "", "## Nuclei Findings", "",
+            f"_{len(report['nuclei'])} findings — {summary}_", "",
+            "| Severity | Template | Name | Detail | Matched At |",
+            "|----------|----------|------|--------|------------|",
+        ]
+        for f in report["nuclei"]:
+            lines.append(
+                f"| {f.get('severity')} | {_md_cell(f.get('template_id'))} "
+                f"| {_md_cell(f.get('name') or '-')} | {_md_cell(f.get('matcher_name') or '-')} "
+                f"| {_md_cell(f.get('matched_at') or '-')} |"
+            )
 
     if report.get("ai_analysis"):
         lines += ["", "---", "", "## AI Analysis", "", report["ai_analysis"]]

@@ -3,7 +3,7 @@ Launched when the program is run without arguments; drives every tool from one m
 import os
 import glob
 
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from rich.panel import Panel as RichPanel
 
@@ -16,6 +16,7 @@ from modules.subdomain import SubdomainScanner
 from modules.portcheck import PortChecker
 from modules.webprobe import WebProber, WEB_PORTS
 from modules.nuclei import NucleiScanner, SEVERITY_ORDER
+from modules.autopilot import run_autopilot
 from modules import reporter
 
 SCAN_LABELS = {
@@ -38,7 +39,7 @@ class CommandCenter:
         ui.print_banner()
         while True:
             self._show_menu()
-            choice = Prompt.ask("\n[bold cyan]Choice[/bold cyan]", default="0").strip()
+            choice = Prompt.ask("\n[bold cyan]Choice[/bold cyan]", default="0").strip().lower()
             action = self.MENU.get(choice)
             if action is None:
                 ui.warn("Invalid choice.")
@@ -55,6 +56,7 @@ class CommandCenter:
             console.print()
 
     MENU = {
+        "a": "tool_autopilot",
         "1": "tool_nmap",
         "2": "tool_subdomain",
         "3": "tool_portcheck",
@@ -70,6 +72,8 @@ class CommandCenter:
         t = Table(show_header=False, box=None, padding=(0, 2))
         t.add_column(style="bold cyan", justify="right")
         t.add_column()
+        t.add_row("A", "[bold green]Autopilot / Full Engagement[/bold green] [dim](runs the whole pipeline)[/dim]")
+        t.add_row("", "")
         t.add_row("1", "Nmap Port Scan          [dim](service/version detection)[/dim]")
         t.add_row("2", "Subdomain Discovery     [dim](crt.sh passive OSINT + DNS)[/dim]")
         t.add_row("3", "Quick Port Check        [dim](open/closed — no nmap needed)[/dim]")
@@ -90,6 +94,52 @@ class CommandCenter:
                 f"[dim]| {len(self.last_results)} open ports[/dim]")
 
     # ---------- Tools ----------
+    def tool_autopilot(self):
+        target = Prompt.ask("Target IP/domain", default=self.last_target or "").strip()
+        if not target:
+            return
+        console.print("[1] Fast  [2] Standard  [3] Deep")
+        scan_type = Prompt.ask("Nmap scan type", choices=["1", "2", "3"], default="2")
+        use_ai = Confirm.ask("Generate AI report?", default=True)
+
+        console.rule("[bold green]AUTOPILOT[/bold green]")
+        report = run_autopilot(target, scan_type, use_ai=use_ai, log=ui.info)
+        if report is None:
+            ui.warn("No open ports found, or the host is down.")
+            return
+
+        # Remember for follow-up tools
+        self.last_target = target
+        self.last_scan_type = scan_type
+        self.last_results = report["findings"]
+        self.last_nuclei = report["nuclei"]
+
+        console.print()
+        ui.print_summary_table(report["findings"])
+        if report["web"]:
+            wt = Table(title="Web Fingerprint")
+            wt.add_column("URL", style="cyan")
+            wt.add_column("Code", justify="right")
+            wt.add_column("Server")
+            wt.add_column("Tech")
+            wt.add_column("WAF/CDN")
+            for w in report["web"]:
+                wt.add_row(w["url"], str(w["status"]), w.get("server") or "-",
+                           ", ".join(w.get("tech") or []) or "-",
+                           ", ".join(w.get("waf") or []) or "-")
+            console.print(wt)
+        if report["nuclei"]:
+            crit_high = sum(1 for f in report["nuclei"] if f["severity"] in ("CRITICAL", "HIGH"))
+            ui.info(f"Nuclei: {len(report['nuclei'])} findings ({crit_high} critical/high)")
+        if report.get("ai_analysis"):
+            from rich.markdown import Markdown
+            console.print(RichPanel.fit("[bold cyan]ENGAGEMENT REPORT[/bold cyan]"))
+            console.print(Markdown(report["ai_analysis"]))
+
+        fmt = Prompt.ask("Save report format", choices=["md", "json"], default="md")
+        path = reporter.save_report(report, fmt=fmt)
+        ui.success(f"Unified report saved: {path}")
+
     def tool_nmap(self):
         target = Prompt.ask("Target IP/domain").strip()
         if not target:

@@ -51,6 +51,13 @@ python3 silentpivot.py
 Pick the tool you want from the menu. After an nmap scan the findings are kept in memory;
 CVE analysis and the AI report chain off that scan.
 
+**Autopilot — full engagement in one command:**
+```bash
+python3 silentpivot.py -t target.com --auto
+```
+Runs the whole pipeline end to end: Nmap → CVE/KEV/EPSS/Exploit → Web probe →
+Nuclei → AI report → one unified report. Also available in the panel as **[A]**.
+
 **CLI / automation mode:**
 ```bash
 python3 silentpivot.py -t scanme.nmap.org -s deep -f json -o report.json

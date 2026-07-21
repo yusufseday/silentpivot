@@ -40,6 +40,69 @@ class SilentAI:
         4. **Hardening Recommendations** — concrete, actionable fixes.
         """
 
+        return self._complete(model_name, prompt)
+
+    def analyze_engagement(self, findings, web=None, nuclei=None):
+        """Engagement-level analysis that sees services+CVEs, web fingerprints and
+        nuclei findings together, and prioritizes by real exploitability."""
+        model_name = "llama-3.3-70b-versatile"
+        web = web or []
+        nuclei = nuclei or []
+
+        # Slim the service data so the prompt stays compact (drop verbose poc_urls).
+        slim_services = []
+        for r in findings:
+            cves = [{k: c.get(k) for k in
+                     ("id", "cvss", "severity", "kev", "epss", "poc", "exploitdb")}
+                    for c in (r.get("cves") or [])]
+            slim_services.append({
+                "port": r.get("port"), "service": r.get("service"),
+                "product": r.get("product"), "version": r.get("version"),
+                "cves": cves,
+            })
+
+        sev_counts = {}
+        for f in nuclei:
+            sev_counts[f["severity"]] = sev_counts.get(f["severity"], 0) + 1
+        notable = [
+            {k: f.get(k) for k in ("template_id", "name", "severity", "matcher_name", "matched_at")}
+            for f in nuclei if f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")
+        ][:30]
+
+        context = {
+            "services": slim_services,
+            "web_fingerprint": [
+                {k: w.get(k) for k in ("url", "status", "title", "server", "tech", "waf")}
+                for w in web
+            ],
+            "nuclei_summary": sev_counts,
+            "nuclei_notable": notable,
+        }
+
+        prompt = f"""
+        You are a Senior Penetration Tester writing an engagement report. Below is the
+        full recon data: open services with VERIFIED CVEs (NVD), web fingerprints, and
+        active nuclei findings.
+        {json.dumps(context, indent=2, ensure_ascii=False)}
+
+        RULES:
+        - Only reference the verified CVEs given; never invent CVE numbers.
+        - Prioritize by real exploitability: 'kev' true = actively exploited (top
+          priority), high 'epss' = likely exploited, 'exploitdb'/'poc' = public exploit
+          exists. nuclei CRITICAL/HIGH findings are confirmed live issues.
+        - Be concise and actionable; do not pad with generic advice.
+
+        Write the report in English, in Markdown, with these sections:
+        1. **Executive Summary** — overall risk posture and the top 3-5 things to fix first.
+        2. **Attack Surface** — services, web technologies, and any WAF/CDN observed.
+        3. **Key Findings** — prioritized issues (CVEs + nuclei), each with why it matters.
+        4. **Exploitation Path** — the most realistic route in, with tools (Metasploit,
+           searchsploit, etc.).
+        5. **Remediation** — concrete fixes, most important first.
+        """
+        return self._complete(model_name, prompt)
+
+    def _complete(self, model_name, prompt):
         try:
             response = self.client.chat.completions.create(
                 model=model_name,
