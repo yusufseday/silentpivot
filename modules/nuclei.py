@@ -89,6 +89,9 @@ class NucleiScanner:
             findings.append({
                 "template_id": obj.get("template-id") or obj.get("templateID", ""),
                 "name": info.get("name", ""),
+                # matcher-name distinguishes multiple hits of one template (e.g. which
+                # security header is missing), turning duplicate-looking rows into signal.
+                "matcher_name": obj.get("matcher-name", ""),
                 "severity": (info.get("severity") or "unknown").upper(),
                 "tags": info.get("tags") or [],
                 "matched_at": obj.get("matched-at") or obj.get("matched", ""),

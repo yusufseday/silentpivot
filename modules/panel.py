@@ -251,6 +251,7 @@ class CommandCenter:
         t.add_column("Severity")
         t.add_column("Template", style="cyan")
         t.add_column("Name")
+        t.add_column("Detail")
         t.add_column("Matched At")
         for f in findings:
             sv = f["severity"]
@@ -258,6 +259,7 @@ class CommandCenter:
                 f"[{ui.SEVERITY_COLORS.get(sv, 'dim')}]{sv}[/]",
                 f["template_id"],
                 f["name"] or "[dim]-[/dim]",
+                f.get("matcher_name") or "[dim]-[/dim]",
                 f["matched_at"] or "[dim]-[/dim]",
             )
         console.print(t)
