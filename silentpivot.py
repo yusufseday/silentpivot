@@ -1,121 +1,103 @@
-import os
-import socket
-from datetime import datetime
+import sys
+import argparse
+
+from modules import ui
+from modules.ui import console, print_summary_table
 from modules.scanner import NetworkScanner
 from modules.ai_engine import SilentAI
 from modules.vuln_checker import VulnChecker
-from rich.console import Console
+from modules import reporter
 from rich.markdown import Markdown
-from rich.table import Table
 
-console = Console()
-
-# CVSS severity -> renk eşlemesi (rich stilleri)
-SEVERITY_COLORS = {
-    "CRITICAL": "bold red",
-    "HIGH": "red",
-    "MEDIUM": "yellow",
-    "LOW": "green",
-    "UNKNOWN": "dim",
+# Scan type: usable by both number (1/2/3) and name.
+SCAN_ALIASES = {
+    "1": "1", "fast": "1", "quick": "1",
+    "2": "2", "standard": "2", "std": "2",
+    "3": "3", "deep": "3", "full": "3",
+}
+SCAN_LABELS = {
+    "1": "Fast (Top 100)",
+    "2": "Standard (1-1000 + version)",
+    "3": "Deep (All ports + OS)",
 }
 
 
-def print_summary_table(results):
-    """Açık portları ve doğrulanmış en yüksek CVE riskini renkli tabloda göster."""
-    table = Table(title="Tarama Özeti", show_lines=False)
-    table.add_column("Port", justify="right", style="cyan")
-    table.add_column("Servis", style="white")
-    table.add_column("Versiyon", style="white")
-    table.add_column("CVE Sayısı", justify="right")
-    table.add_column("En Yüksek Risk")
+def run_scan(target, scan_type, use_ai=True, quiet=False):
+    """Scan -> CVE enrichment -> (optional) AI. Returns structured data."""
+    scanner = NetworkScanner()
+    results = scanner.scan_target(target, scan_type)
+    if not results:
+        return None, None
 
-    for r in results:
-        cves = r.get("cves", []) or []
-        if cves:
-            worst = max(
-                cves,
-                key=lambda c: c["cvss"] if isinstance(c.get("cvss"), (int, float)) else -1,
-            )
-            sev = worst.get("severity", "UNKNOWN")
-            risk = f"[{SEVERITY_COLORS.get(sev, 'dim')}]{sev} ({worst.get('cvss')})[/]"
-        else:
-            risk = "[dim]—[/dim]"
-        table.add_row(
-            str(r.get("port", "?")),
-            r.get("service", "?"),
-            r.get("version", "?"),
-            str(len(cves)),
-            risk,
-        )
-    console.print(table)
+    if not quiet:
+        ui.info("Verifying vulnerabilities against NVD + CISA KEV...")
+    enriched = VulnChecker().check_vulnerabilities(results)
+
+    if not quiet:
+        console.print()
+        print_summary_table(enriched)
+
+    analysis = None
+    if use_ai:
+        if not quiet:
+            ui.info("Sending data to AI analysis...")
+        analysis = SilentAI().analyze_results(enriched)
+        if not quiet:
+            console.print("\n[bold cyan]--- PENTEST REPORT ---[/bold cyan]\n")
+            console.print(Markdown(analysis))
+
+    return enriched, analysis
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="silentpivot",
+        description="SilentPivot — AI-powered recon and vulnerability analysis tool.",
+        epilog="With no arguments, the interactive command center (panel) opens.",
+    )
+    p.add_argument("-t", "--target", help="Target IP or domain")
+    p.add_argument("-s", "--scan-type", default="2",
+                   help="Scan type: 1/fast, 2/standard, 3/deep (default: 2)")
+    p.add_argument("--no-ai", action="store_true", help="Skip AI analysis (scan + CVE only)")
+    p.add_argument("-o", "--output", help="Report file path (default: auto under data/)")
+    p.add_argument("-f", "--format", default="md", choices=["md", "json"],
+                   help="Report format (default: md)")
+    p.add_argument("-q", "--quiet", action="store_true", help="Reduce terminal output")
+    p.add_argument("--no-save", action="store_true", help="Do not save the report to disk")
+    return p
+
+
+def run_cli(args):
+    target = args.target
+    scan_type = SCAN_ALIASES.get(str(args.scan_type).lower())
+    if scan_type is None:
+        ui.error(f"Invalid scan type: {args.scan_type}")
+        sys.exit(2)
+
+    enriched, analysis = run_scan(target, scan_type, use_ai=not args.no_ai, quiet=args.quiet)
+    if enriched is None:
+        ui.error("No open ports found, or the host is down.")
+        sys.exit(1)
+
+    report = reporter.build_report_data(
+        target, SCAN_LABELS.get(scan_type, scan_type), enriched, analysis
+    )
+    if not args.no_save:
+        path = reporter.save_report(report, fmt=args.format, output_path=args.output)
+        ui.success(f"Report saved: {path}")
 
 
 def main():
-    # Senin belirlediğin özel yeşil başlık formatı
-    console.print("\n[bold green]=== SilentPivot ===[/bold green]\n")
-    target = input("Hedef IP veya Domain girin (Örn: scanme.nmap.org): ")
-
-    # Menü Tasarımı
-    console.print("\n[bold cyan]Tarama Türünü Seçin:[/bold cyan]")
-    console.print("[1] Hızlı Tarama (En popüler 100 port - Versiyon tespiti yok)")
-    console.print("[2] Standart Tarama (1-1000 arası portlar + Versiyon tespiti)")
-    console.print("[3] Derin Tarama (Tüm 65535 port + OS/Versiyon tespiti - Uzun sürer)")
-
-    scan_type = input("\nSeçiminiz (1/2/3) [Varsayılan: 2]: ")
-    if scan_type not in ["1", "2", "3"]:
-        scan_type = "2"
-
-    # 1. Nmap Tarama Aşaması
-    scanner = NetworkScanner()
-    results = scanner.scan_target(target, scan_type)
-
-    if not results:
-        console.print("[bold red]Hedefte açık port bulunamadı veya hedef ayakta değil.[/bold red]")
-        return
-
-    # 2. CVE Veritabanı Sorgulama Aşaması
-    console.print("\n[bold yellow]NVD Veritabanında bilinen zafiyetler (CVE) aranıyor...[/bold yellow]")
-    vuln_checker = VulnChecker()
-    enriched_results = vuln_checker.check_vulnerabilities(results)
-
-    # Doğrulanmış bulguları AI'dan önce hızlı bir özet tablosunda göster
-    console.print()
-    print_summary_table(enriched_results)
-
-    # 3. AI Analiz Aşaması
-    console.print("[bold yellow]Veriler yapay zeka analizine gönderiliyor...[/bold yellow]\n")
-    ai = SilentAI()
-    analysis = ai.analyze_results(enriched_results)
-
-    # 4. Sonuç Raporu (Senin belirlediğin özel cyan başlık formatı)
-    console.print("\n[bold cyan]--- PENTEST RAPORU ---[/bold cyan]\n")
-    console.print(Markdown(analysis))
-
-    # 5. Raporu Kaydetme
-    console.print("[yellow]Rapor dosyaya kaydediliyor...[/yellow]")
-    try:
-        ip_address = socket.gethostbyname(target)
-        domain_name = target if target != ip_address else "Direct-IP"
-    except Exception:
-        ip_address = "Bilinmiyor"
-        domain_name = target
-
-    if not os.path.exists("data"):
-        os.makedirs("data")
-
-    zaman = datetime.now().strftime("%Y%m%d_%H%M")
-    dosya_adi = f"{ip_address}({domain_name})_{zaman}.md"
-    dosya_yolu = os.path.join("data", dosya_adi)
-
-    with open(dosya_yolu, "w", encoding="utf-8") as dosya:
-        dosya.write(f"# SilentPivot Pentest Raporu\n")
-        dosya.write(f"**Hedef:** {target}\n")
-        dosya.write(f"**Tarama Türü:** Seviye {scan_type}\n")
-        dosya.write(f"**Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        dosya.write("---\n\n")
-        dosya.write(analysis)
-
-    console.print(f"\n[bold green][+] Rapor başarıyla data/ klasörüne kaydedildi: {dosya_adi}[/bold green]\n")
+    args = build_parser().parse_args()
+    if args.target:
+        run_cli(args)  # arguments given -> automation/CLI mode
+    else:
+        # No arguments -> interactive command center
+        from modules.panel import CommandCenter
+        try:
+            CommandCenter().run()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[dim]Exiting...[/dim]")
 
 
 if __name__ == "__main__":

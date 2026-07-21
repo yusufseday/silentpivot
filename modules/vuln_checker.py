@@ -2,20 +2,24 @@ import os
 import time
 import requests
 
+from modules.kev import KevCatalog
+
 
 class VulnChecker:
     def __init__(self):
         # NIST NVD (National Vulnerability Database) Public API
         self.base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-        # Opsiyonel NVD API anahtarı: varsa rate limit 5/30sn -> 50/30sn olur.
+        # Optional NVD API key: raises the rate limit from 5/30s to 50/30s.
         self.api_key = os.getenv("NVD_API_KEY", "")
-        # Aynı servis+versiyon tekrar sorgulanmasın diye basit önbellek.
+        # Simple cache so the same service+version is not queried twice.
         self._cache = {}
+        # CISA KEV: used to flag actively exploited CVEs.
+        self.kev = KevCatalog()
 
     def _request(self, params):
-        """NVD'ye rate-limit'e saygılı, tekrar denemeli istek."""
+        """Rate-limit-friendly, retrying request to NVD."""
         headers = {"apiKey": self.api_key} if self.api_key else {}
-        # Anahtar yoksa NVD 6 saniyede 1 istek önerir; varsa daha sık sorulabilir.
+        # Without a key NVD recommends 1 request / 6s; with one we can go faster.
         delay = 0.7 if self.api_key else 6.0
 
         for attempt in range(3):
@@ -29,7 +33,7 @@ class VulnChecker:
 
             if resp.status_code == 200:
                 return resp.json()
-            # 403/429 -> rate limit; artan bekleme ile tekrar dene.
+            # 403/429 -> rate limit; back off and retry.
             if resp.status_code in (403, 429):
                 time.sleep(delay * (attempt + 2))
                 continue
@@ -37,18 +41,26 @@ class VulnChecker:
         return None
 
     def _parse_cves(self, data, limit=3):
-        """NVD yanıtından CVE id + CVSS skoru + severity çıkar."""
+        """Extract CVE id + CVSS score + severity from an NVD response."""
         cves = []
         for item in data.get("vulnerabilities", [])[:limit]:
             cve = item.get("cve", {})
             cve_id = cve.get("id", "?")
             score, severity = self._extract_cvss(cve.get("metrics", {}))
-            cves.append({"id": cve_id, "cvss": score, "severity": severity})
+            kev_info = self.kev.lookup(cve_id)
+            cves.append({
+                "id": cve_id,
+                "cvss": score,
+                "severity": severity,
+                # Present in CISA KEV -> actively exploited (the strongest signal)
+                "kev": bool(kev_info),
+                "ransomware": kev_info.get("ransomware") if kev_info else None,
+            })
         return cves
 
     @staticmethod
     def _extract_cvss(metrics):
-        """CVSS v3.1 > v3.0 > v2 sırasıyla skoru ve severity'yi bul."""
+        """Find score and severity in order: CVSS v3.1 > v3.0 > v2."""
         for key in ("cvssMetricV31", "cvssMetricV30"):
             if metrics.get(key):
                 d = metrics[key][0]["cvssData"]
@@ -66,16 +78,16 @@ class VulnChecker:
             service = result.get("service", "")
             version = result.get("version", "")
 
-            # 1) Önce CPE ile sorgula (en isabetli yöntem).
-            # 2) CPE yoksa servis+versiyon anahtar araması (fallback).
+            # 1) Query by CPE first (most accurate method).
+            # 2) If no CPE, fall back to service+version keyword search.
             if cpe:
                 cache_key = cpe
                 params = {"cpeName": self._normalize_cpe(cpe), "resultsPerPage": 3}
-            elif version and version != "Bilinmiyor":
+            elif version and version != "unknown":
                 cache_key = f"{service} {version}"
                 params = {"keywordSearch": cache_key, "resultsPerPage": 3}
             else:
-                result["cve_data"] = "Versiyon/CPE bilinmediği için zafiyet taraması yapılamadı."
+                result["cve_data"] = "Version/CPE unknown, vulnerability scan skipped."
                 result["cves"] = []
                 enriched_results.append(result)
                 continue
@@ -88,16 +100,19 @@ class VulnChecker:
                 self._cache[cache_key] = cves
 
             if cves is None:
-                result["cve_data"] = "Zafiyet veritabanına erişilemedi."
+                result["cve_data"] = "Could not reach the vulnerability database."
                 result["cves"] = []
             elif cves:
                 summary = ", ".join(
-                    f"{c['id']} (CVSS {c['cvss']}/{c['severity']})" for c in cves
+                    f"{c['id']} (CVSS {c['cvss']}/{c['severity']}"
+                    + (", ACTIVELY EXPLOITED/KEV" if c.get("kev") else "")
+                    + ")"
+                    for c in cves
                 )
-                result["cve_data"] = f"DOĞRULANMIŞ ZAFİYETLER: {summary}"
+                result["cve_data"] = f"VERIFIED VULNERABILITIES: {summary}"
                 result["cves"] = cves
             else:
-                result["cve_data"] = "Bilinen bir CVE bulunamadı."
+                result["cve_data"] = "No known CVE found."
                 result["cves"] = []
 
             enriched_results.append(result)
@@ -106,7 +121,7 @@ class VulnChecker:
 
     @staticmethod
     def _normalize_cpe(cpe):
-        """Nmap 'cpe:/a:apache:http_server:2.4.49' verir; NVD 2.3 formatı ister.
+        """Nmap gives 'cpe:/a:apache:http_server:2.4.49'; NVD wants the 2.3 format.
         cpe:/a:apache:http_server:2.4.49 -> cpe:2.3:a:apache:http_server:2.4.49:*:*:*:*:*:*:*
         """
         if cpe.startswith("cpe:2.3:"):
@@ -114,7 +129,7 @@ class VulnChecker:
         if cpe.startswith("cpe:/"):
             body = cpe[len("cpe:/"):]
             parts = body.split(":")
-            # cpe 2.3 tam 11 alan bekler; eksikleri '*' ile doldur.
+            # cpe 2.3 expects exactly 11 fields; pad the missing ones with '*'.
             while len(parts) < 11:
                 parts.append("*")
             return "cpe:2.3:" + ":".join(parts)

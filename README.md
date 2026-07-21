@@ -4,55 +4,88 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
 
-**SilentPivot** is an AI-powered reconnaissance and vulnerability analysis tool designed for modern penetration testing. It seamlessly automates the initial network scanning phase and leverages Large Language Models (LLMs) to analyze results, score risks, and suggest actionable exploit vectors.
+**SilentPivot** is an AI-powered recon and vulnerability analysis **command center**
+built for penetration testing and red team work. It drives multiple tools from a single
+terminal panel, verifies scan results against NVD + CISA KEV, and turns them into a
+professional report with the help of a Large Language Model.
 
 ## 🚀 Features
 
-* **Automated Reconnaissance:** Deep integration with Nmap for fast, reliable port, service, and OS version detection.
-* **AI-Driven Analysis:** Utilizes advanced LLMs to analyze scan results with the mindset of a senior penetration tester.
-* **Actionable Insights:** Automatically predicts CVEs, suggests exploit tools (e.g., Metasploit, Searchsploit), and maps out potential attack vectors.
-* **Auto-Logging:** Generates and saves detailed Markdown reports locally for every scan, complete with target resolution and timestamps for evidence tracking.
+* **One panel, many tools:** Drive every module from the interactive command center (menu).
+* **Nmap scanning:** Fast / Standard / Deep port + service/version detection.
+* **Subdomain discovery:** Passive OSINT via crt.sh (Certificate Transparency) + live DNS resolution.
+* **Quick port check:** Native, parallel open/closed test in pure Python — no nmap required.
+* **CVE + CISA KEV:** CPE-based NVD queries; flags and prioritizes vulnerabilities that are
+  **actively exploited in the wild**.
+* **AI analysis:** Expert report grounded strictly on verified CVEs (no hallucinated CVE numbers).
+* **Structured output:** Markdown or JSON reports, saved automatically.
+* **Two modes:** Interactive panel *and* a scriptable CLI (for automation/pipelines).
 
 ## 🛠️ Prerequisites
 
-Before you begin, ensure you have met the following requirements:
 * **Python 3.8+**
-* **Nmap:** Must be installed and added to your system's PATH. ([Download Nmap](https://nmap.org/download.html))
-* **API Key:** An API key.
+* **Nmap** (on PATH) — only for the nmap scan module. ([Download](https://nmap.org/download.html))
+* **AI API key** (Groq by default) — only for the AI report module.
 
 ## 📦 Installation
 
-1. Clone the repository:
 ```bash
-git clone [https://github.com/yusufseday/silentpivot.git](https://github.com/yusufseday/silentpivot.git)
+git clone https://github.com/yusufseday/silentpivot.git
 cd silentpivot
-Install the required Python dependencies:
-
-Bash
 pip install -r requirements.txt
-Set up your environment variables:
-Rename .env.example to .env and insert your API key:
+cp .env.example .env    # then put your key inside .env
+```
 
-Kod snippet'i
+`.env` contents:
+```
 AI_API_KEY=your_api_key_here
-🎯 Usage
-Run the tool via the command line. You can input either an IP address or a Domain name.
+NVD_API_KEY=            # optional, speeds up CVE queries
+```
 
-Bash
+## 🎯 Usage
+
+**Interactive panel (default):**
+```bash
 python3 silentpivot.py
-Follow the on-screen prompts to enter your target. The tool will automatically resolve domains, perform the scan, process the AI analysis, and save the final report in the data/ directory.
+```
+Pick the tool you want from the menu. After an nmap scan the findings are kept in memory;
+CVE analysis and the AI report chain off that scan.
 
-📂 Project Structure
-Plaintext
+**CLI / automation mode:**
+```bash
+python3 silentpivot.py -t scanme.nmap.org -s deep -f json -o report.json
+python3 silentpivot.py -t 10.0.0.5 -s fast --no-ai --quiet
+```
+
+| Flag | Description |
+|------|-------------|
+| `-t, --target` | Target IP/domain |
+| `-s, --scan-type` | `1/fast`, `2/standard`, `3/deep` |
+| `--no-ai` | Skip AI analysis |
+| `-f, --format` | `md` or `json` |
+| `-o, --output` | Report file path |
+| `-q, --quiet` | Quiet mode |
+
+## 📂 Project Structure
+
+```
 silentpivot/
+├── silentpivot.py        # Entry point (panel + CLI)
 ├── modules/
-│   ├── scanner.py       # Nmap integration and data parsing
-│   └── ai_engine.py     # LLM integration
-├── data/                # Auto-generated Markdown scan reports
-├── .env.example         # Template for environment variables
-├── requirements.txt     # Python dependencies
-└── silentpivot.py       # Main executable script
-⚠️ Legal Disclaimer
-This tool is designed strictly for educational purposes and authorized penetration testing only. The developer assumes no liability and is not responsible for any misuse, damage, or illegal activities caused by this program. Always ensure you have explicit, written permission from the system owner before scanning any network or system.
+│   ├── panel.py          # Interactive command center (menu)
+│   ├── ui.py             # Shared UI (Console, colors, tables)
+│   ├── scanner.py        # Nmap integration
+│   ├── subdomain.py      # crt.sh subdomain discovery
+│   ├── portcheck.py      # Native TCP port check
+│   ├── vuln_checker.py   # NVD (CPE) + CVSS vulnerability verification
+│   ├── kev.py            # CISA KEV (actively exploited) catalog
+│   ├── ai_engine.py      # LLM analysis engine
+│   └── reporter.py       # JSON / Markdown report generation
+└── data/                 # Auto-generated reports (gitignored)
+```
 
-Developed for the cybersecurity community.
+## ⚠️ Legal Disclaimer
+
+This tool is intended for **educational purposes and authorized penetration testing only**.
+Always make sure you have **explicit, written permission** from the system owner before
+scanning any system. The developer assumes no liability for misuse.

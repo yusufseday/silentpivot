@@ -14,27 +14,27 @@ class SilentAI:
         )
 
     def analyze_results(self, scan_data):
-        # Groq üzerindeki hızlı ve yetenekli modellerden biri
+        # One of the fast, capable models on Groq
         model_name = "llama-3.3-70b-versatile"
 
         prompt = f"""
-        Sen bir Senior Penetration Tester'sın. Aşağıdaki Nmap tarama verisi ve
-        NVD (NIST) veritabanından DOĞRULANMIŞ CVE listesi verilmiştir:
+        You are a Senior Penetration Tester. Below is Nmap scan data together with a
+        list of VERIFIED CVEs from the NVD (NIST) database:
         {json.dumps(scan_data, indent=2, ensure_ascii=False)}
 
-        ÖNEMLİ KURALLAR:
-        - 'cve_data' ve 'cves' alanlarındaki CVE'ler gerçek ve doğrulanmıştır.
-          SADECE bu doğrulanmış CVE'leri referans al; kendin yeni CVE numarası UYDURMA.
-        - Doğrulanmış CVE yoksa bunu açıkça belirt ve servis/versiyona göre
-          genel risk değerlendirmesi yap (spesifik CVE numarası verme).
+        IMPORTANT RULES:
+        - The CVEs in the 'cve_data' and 'cves' fields are real and verified.
+          Reference ONLY these verified CVEs; do NOT invent new CVE numbers.
+        - If there are no verified CVEs, state this clearly and give a general risk
+          assessment based on the service/version (do not cite specific CVE numbers).
 
-        Raporu şu başlıklarla, Türkçe ve Markdown formatında hazırla:
-        1. **Yönetici Özeti** — En kritik bulgular ve genel risk seviyesi (CVSS'e göre).
-        2. **Bulgular** — Her açık port için: servis/versiyon, doğrulanmış CVE'ler,
-           CVSS skoru ve pratikteki risk açıklaması.
-        3. **Exploit Stratejisi** — Önceliklendirilmiş, kullanılabilecek araçlar
-           (Metasploit, searchsploit vb.) ve saldırı vektörleri.
-        4. **Sertleştirme (Hardening) Önerileri** — Somut, uygulanabilir çözümler.
+        Produce the report in English, in Markdown, with these sections:
+        1. **Executive Summary** — the most critical findings and overall risk level (per CVSS).
+        2. **Findings** — for each open port: service/version, verified CVEs,
+           CVSS score, and the practical risk explanation.
+        3. **Exploitation Strategy** — prioritized, usable tools
+           (Metasploit, searchsploit, etc.) and attack vectors.
+        4. **Hardening Recommendations** — concrete, actionable fixes.
         """
 
         try:
@@ -45,4 +45,4 @@ class SilentAI:
             )
             return response.choices[0].message.content
         except Exception as e:
-            return f"AI Analizi sırasında hata oluştu: {str(e)}"
+            return f"An error occurred during AI analysis: {str(e)}"

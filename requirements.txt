@@ -2,3 +2,4 @@ python-nmap
 openai
 python-dotenv
 rich
+requests
