@@ -14,6 +14,7 @@ from modules.vuln_checker import VulnChecker
 from modules.ai_engine import SilentAI
 from modules.subdomain import SubdomainScanner
 from modules.portcheck import PortChecker
+from modules.webprobe import WebProber, WEB_PORTS
 from modules import reporter
 
 SCAN_LABELS = {
@@ -55,9 +56,10 @@ class CommandCenter:
         "1": "tool_nmap",
         "2": "tool_subdomain",
         "3": "tool_portcheck",
-        "4": "tool_vuln",
-        "5": "tool_ai_report",
-        "6": "tool_reports",
+        "4": "tool_webprobe",
+        "5": "tool_vuln",
+        "6": "tool_ai_report",
+        "7": "tool_reports",
         "0": "exit",
     }
 
@@ -68,9 +70,10 @@ class CommandCenter:
         t.add_row("1", "Nmap Port Scan          [dim](service/version detection)[/dim]")
         t.add_row("2", "Subdomain Discovery     [dim](crt.sh passive OSINT + DNS)[/dim]")
         t.add_row("3", "Quick Port Check        [dim](open/closed — no nmap needed)[/dim]")
-        t.add_row("4", "CVE + KEV Vuln Analysis [dim](on the last scan)[/dim]")
-        t.add_row("5", "Generate AI Report      [dim](on the last scan)[/dim]")
-        t.add_row("6", "Saved Reports")
+        t.add_row("4", "Web Probe & Fingerprint [dim](HTTP tech/WAF detection)[/dim]")
+        t.add_row("5", "CVE + KEV Vuln Analysis [dim](on the last scan)[/dim]")
+        t.add_row("6", "Generate AI Report      [dim](on the last scan)[/dim]")
+        t.add_row("7", "Saved Reports")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,
@@ -158,6 +161,47 @@ class CommandCenter:
             t.add_row(str(r["port"]), r["service"], "[green]OPEN[/green]")
         console.print(t)
         ui.success(f"{len(results)} open ports found.")
+
+    def tool_webprobe(self):
+        default = self.last_target or ""
+        host = Prompt.ask("Target host/domain", default=default).strip()
+        if not host:
+            return
+
+        # If we scanned this host with nmap, probe exactly the open web ports found.
+        ports = None
+        if host == self.last_target and self.last_results:
+            web = [r["port"] for r in self.last_results if r["port"] in WEB_PORTS]
+            if web:
+                ports = web
+                ui.info(f"Using open web ports from the last scan: {web}")
+
+        ui.info(f"Probing web services on {host}...")
+        results = WebProber().probe_host(host, ports=ports)
+        if not results:
+            ui.warn("No reachable web services found.")
+            return
+
+        t = Table(title=f"{host} — Web Fingerprint")
+        t.add_column("URL", style="cyan", no_wrap=False)
+        t.add_column("Code", justify="right")
+        t.add_column("Title")
+        t.add_column("Server")
+        t.add_column("Technologies")
+        t.add_column("WAF/CDN")
+        for r in results:
+            code = r["status"]
+            code_style = "green" if code < 400 else ("yellow" if code < 500 else "red")
+            t.add_row(
+                r["url"],
+                f"[{code_style}]{code}[/]",
+                r["title"] or "[dim]-[/dim]",
+                r["server"] or "[dim]-[/dim]",
+                ", ".join(r["tech"]) or "[dim]-[/dim]",
+                ("[bold magenta]" + ", ".join(r["waf"]) + "[/]") if r["waf"] else "[dim]-[/dim]",
+            )
+        console.print(t)
+        ui.success(f"{len(results)} web endpoint(s) fingerprinted.")
 
     def tool_vuln(self):
         if not self.last_results:

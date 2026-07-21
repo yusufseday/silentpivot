@@ -91,6 +91,16 @@ def c_portcheck():
     return (len(open_ports) > 0), f"open ports on scanme.nmap.org: {open_ports}"
 
 
+def c_webprobe():
+    from modules.webprobe import WebProber
+    res = WebProber(timeout=10).probe_host("wordpress.com", ports=[443])
+    if not res:
+        return False, "no web endpoint reachable"
+    r = res[0]
+    return (r["status"] == 200 and bool(r["tech"])), \
+        f"wordpress.com -> [{r['status']}] tech={r['tech']} waf={r['waf']}"
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -100,6 +110,7 @@ def main():
     check("NVD CVE query (CPE-based)", c_nvd)
     check("Subdomain multi-source", c_subdomain)
     check("Native port check", c_portcheck)
+    check("Web probe & fingerprint", c_webprobe)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)
