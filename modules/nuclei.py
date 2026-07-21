@@ -6,22 +6,27 @@ nuclei ships thousands of community templates (CVEs, misconfigurations, exposed
 panels, default creds, secrets), which is what turns recon into real findings.
 """
 import os
+import re
 import json
 import shutil
 import tempfile
 import subprocess
 
 SEVERITY_ORDER = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0, "UNKNOWN": -1}
+_TEMPLATES_RE = re.compile(r"Templates loaded for current scan:\s*(\d+)")
 
 
 class NucleiScanner:
     def __init__(self):
         self.path = shutil.which("nuclei")
         self.available = self.path is not None
+        # Populated after scan(): {"returncode", "templates", "errors"}
+        self.meta = {}
 
-    def scan(self, targets, severities=("medium", "high", "critical"), timeout=900):
+    def scan(self, targets, severities=("medium", "high", "critical"), timeout=1800):
         """Run nuclei against one or more targets. Returns a sorted findings list,
-        or None if nuclei is not installed."""
+        or None if nuclei is not installed. Run diagnostics land in self.meta so the
+        caller can tell a genuine 'no findings' from an error / missing templates."""
         if not self.available:
             return None
         if isinstance(targets, str):
@@ -36,20 +41,37 @@ class NucleiScanner:
         try:
             tmp.write("\n".join(targets))
             tmp.close()
-            cmd = [self.path, "-l", tmp.name, "-jsonl", "-silent", "-disable-update-check"]
+            # NOTE: no -silent, so nuclei's INF/ERR logs reach stderr where we parse
+            # the loaded-template count and detect fatal errors. Findings (JSONL) go
+            # to stdout. -disable-update-check only skips the version nag.
+            cmd = [self.path, "-l", tmp.name, "-jsonl", "-disable-update-check"]
             if severities:
                 cmd += ["-severity", ",".join(severities)]
             proc = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=timeout
             )
+            self.meta = self._parse_meta(proc.returncode, proc.stderr)
             return self.parse_jsonl(proc.stdout)
-        except (subprocess.SubprocessError, OSError):
+        except subprocess.TimeoutExpired:
+            self.meta = {"returncode": None, "templates": None, "errors": ["timeout"]}
+            return []
+        except (subprocess.SubprocessError, OSError) as e:
+            self.meta = {"returncode": None, "templates": None, "errors": [str(e)]}
             return []
         finally:
             try:
                 os.unlink(tmp.name)
             except OSError:
                 pass
+
+    @staticmethod
+    def _parse_meta(returncode, stderr):
+        stderr = stderr or ""
+        m = _TEMPLATES_RE.search(stderr)
+        templates = int(m.group(1)) if m else None
+        errors = [ln.strip() for ln in stderr.splitlines()
+                  if "[FTL]" in ln or "[ERR]" in ln]
+        return {"returncode": returncode, "templates": templates, "errors": errors[-3:]}
 
     @staticmethod
     def parse_jsonl(text):

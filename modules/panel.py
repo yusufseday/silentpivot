@@ -227,9 +227,25 @@ class CommandCenter:
             ui.warn("nuclei became unavailable.")
             return
         self.last_nuclei = findings
-        if not findings:
-            ui.success("nuclei finished — no findings at the selected severities.")
+        meta = scanner.meta
+        tmpl = meta.get("templates")
+
+        # Distinguish a genuine "no findings" from an error / missing templates.
+        if tmpl == 0:
+            ui.error("nuclei loaded 0 templates. Install them first: "
+                     "[bold]nuclei -update-templates[/bold]")
             return
+        if not findings and meta.get("errors"):
+            ui.error(f"nuclei reported errors (exit {meta.get('returncode')}):")
+            for e in meta["errors"]:
+                console.print(f"  [red]{e}[/red]")
+            return
+
+        tmpl_note = f" [dim]({tmpl} templates ran)[/dim]" if tmpl else ""
+        if not findings:
+            ui.success(f"nuclei finished — no findings at the selected severities.{tmpl_note}")
+            return
+        console.print(f"[dim]{tmpl} templates ran[/dim]" if tmpl else "")
 
         t = Table(title=f"{target} — Nuclei Findings ({len(findings)})")
         t.add_column("Severity")
