@@ -3,6 +3,7 @@ import time
 import requests
 
 from modules.kev import KevCatalog
+from modules.exploits import ExploitIntel
 
 
 class VulnChecker:
@@ -15,6 +16,8 @@ class VulnChecker:
         self._cache = {}
         # CISA KEV: used to flag actively exploited CVEs.
         self.kev = KevCatalog()
+        # EPSS / PoC / ExploitDB enrichment.
+        self.intel = ExploitIntel()
 
     def _request(self, params):
         """Rate-limit-friendly, retrying request to NVD."""
@@ -117,6 +120,8 @@ class VulnChecker:
 
             enriched_results.append(result)
 
+        # Add exploit intelligence (EPSS probability, public PoCs, ExploitDB).
+        self.intel.enrich(enriched_results)
         return enriched_results
 
     @staticmethod

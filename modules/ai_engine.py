@@ -25,6 +25,9 @@ class SilentAI:
         IMPORTANT RULES:
         - The CVEs in the 'cve_data' and 'cves' fields are real and verified.
           Reference ONLY these verified CVEs; do NOT invent new CVE numbers.
+        - Prioritize using these signals per CVE: 'kev' true = actively exploited in
+          the wild (highest priority), 'epss' = exploitation probability (0-1),
+          'exploitdb'/'poc' = a public exploit already exists.
         - If there are no verified CVEs, state this clearly and give a general risk
           assessment based on the service/version (do not cite specific CVE numbers).
 

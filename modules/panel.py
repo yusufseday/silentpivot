@@ -168,21 +168,36 @@ class CommandCenter:
         t.add_column("Service")
         t.add_column("CVE")
         t.add_column("CVSS")
+        t.add_column("EPSS")
         t.add_column("KEV")
+        t.add_column("Exploit")
         any_cve = False
         for r in self.last_results:
             for c in (r.get("cves") or []):
                 any_cve = True
                 sev = c.get("severity", "UNKNOWN")
+                epss = c.get("epss")
+                epss_str = f"{epss * 100:.1f}%" if isinstance(epss, (int, float)) else "[dim]-[/dim]"
+                # Exploit availability: ExploitDB > public PoC > none
+                if c.get("exploitdb"):
+                    exp = f"[bold red]EDB:{','.join(map(str, c['exploitdb'][:2]))}[/]"
+                elif c.get("poc"):
+                    exp = f"[yellow]PoC x{c.get('poc_count')}[/]"
+                else:
+                    exp = "[dim]-[/dim]"
                 t.add_row(
                     str(r["port"]), r["service"], c["id"],
                     f"[{ui.SEVERITY_COLORS.get(sev, 'dim')}]{c.get('cvss')} {sev}[/]",
+                    epss_str,
                     "[bold red]ACTIVE[/]" if c.get("kev") else "[dim]-[/dim]",
+                    exp,
                 )
         if not any_cve:
             ui.warn("No verified CVEs found.")
             return
         console.print(t)
+        console.print("[dim]EDB = ExploitDB ID · PoC = public GitHub exploit · "
+                      "EPSS = exploitation probability[/dim]")
 
     def tool_ai_report(self):
         if not self.last_results:

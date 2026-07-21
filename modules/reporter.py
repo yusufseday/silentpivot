@@ -61,20 +61,28 @@ def to_markdown(report):
         "",
         "## Findings",
         "",
-        "| Port | Service | Version | CVEs | Top Risk | KEV |",
-        "|------|---------|---------|------|----------|-----|",
+        "| Port | Service | Version | CVEs | Top Risk | EPSS | KEV | Exploit |",
+        "|------|---------|---------|------|----------|------|-----|---------|",
     ]
     for r in report["findings"]:
         cves = r.get("cves") or []
         worst = _worst_cve(cves)
         if worst:
             risk = f"{worst.get('severity')} ({worst.get('cvss')})"
+            epss = worst.get("epss")
+            epss_str = f"{epss * 100:.1f}%" if isinstance(epss, (int, float)) else "-"
             kev = "YES" if any(c.get("kev") for c in cves) else "-"
+            if any(c.get("exploitdb") for c in cves):
+                exploit = "ExploitDB"
+            elif any(c.get("poc") for c in cves):
+                exploit = "PoC"
+            else:
+                exploit = "-"
         else:
-            risk, kev = "-", "-"
+            risk, epss_str, kev, exploit = "-", "-", "-", "-"
         lines.append(
             f"| {r.get('port')} | {r.get('service')} | {r.get('version')} "
-            f"| {len(cves)} | {risk} | {kev} |"
+            f"| {len(cves)} | {risk} | {epss_str} | {kev} | {exploit} |"
         )
 
     if report.get("ai_analysis"):
