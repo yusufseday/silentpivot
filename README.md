@@ -25,7 +25,7 @@ professional report with the help of a Large Language Model.
 
 * **Python 3.8+**
 * **Nmap** (on PATH) — only for the nmap scan module. ([Download](https://nmap.org/download.html))
-* **AI API key** (Groq by default) — only for the AI report module.
+* **AI API key** — only for the AI report module.
 
 ## 📦 Installation
 

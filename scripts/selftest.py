@@ -101,6 +101,17 @@ def c_webprobe():
         f"wordpress.com -> [{r['status']}] tech={r['tech']} waf={r['waf']}"
 
 
+def c_nuclei():
+    from modules.nuclei import NucleiScanner
+    # Parsing is deterministic and always testable; the binary is optional.
+    sample = ('{"template-id":"x","info":{"name":"n","severity":"high"},'
+              '"matched-at":"https://t/a"}')
+    parsed = NucleiScanner.parse_jsonl(sample)
+    ok = len(parsed) == 1 and parsed[0]["severity"] == "HIGH"
+    avail = "installed" if NucleiScanner().available else "NOT installed (optional)"
+    return ok, f"JSONL parse OK | nuclei binary: {avail}"
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -111,6 +122,7 @@ def main():
     check("Subdomain multi-source", c_subdomain)
     check("Native port check", c_portcheck)
     check("Web probe & fingerprint", c_webprobe)
+    check("Nuclei wrapper (parse)", c_nuclei)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)

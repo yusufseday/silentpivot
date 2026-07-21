@@ -15,6 +15,7 @@ from modules.ai_engine import SilentAI
 from modules.subdomain import SubdomainScanner
 from modules.portcheck import PortChecker
 from modules.webprobe import WebProber, WEB_PORTS
+from modules.nuclei import NucleiScanner, SEVERITY_ORDER
 from modules import reporter
 
 SCAN_LABELS = {
@@ -30,6 +31,7 @@ class CommandCenter:
         self.last_target = None
         self.last_scan_type = None
         self.last_results = None  # findings enriched with CVE data
+        self.last_nuclei = None   # last nuclei findings
 
     # ---------- Menu loop ----------
     def run(self):
@@ -57,9 +59,10 @@ class CommandCenter:
         "2": "tool_subdomain",
         "3": "tool_portcheck",
         "4": "tool_webprobe",
-        "5": "tool_vuln",
-        "6": "tool_ai_report",
-        "7": "tool_reports",
+        "5": "tool_nuclei",
+        "6": "tool_vuln",
+        "7": "tool_ai_report",
+        "8": "tool_reports",
         "0": "exit",
     }
 
@@ -71,9 +74,10 @@ class CommandCenter:
         t.add_row("2", "Subdomain Discovery     [dim](crt.sh passive OSINT + DNS)[/dim]")
         t.add_row("3", "Quick Port Check        [dim](open/closed — no nmap needed)[/dim]")
         t.add_row("4", "Web Probe & Fingerprint [dim](HTTP tech/WAF detection)[/dim]")
-        t.add_row("5", "CVE + KEV Vuln Analysis [dim](on the last scan)[/dim]")
-        t.add_row("6", "Generate AI Report      [dim](on the last scan)[/dim]")
-        t.add_row("7", "Saved Reports")
+        t.add_row("5", "Nuclei Vuln Scan        [dim](active templated scanning)[/dim]")
+        t.add_row("6", "CVE + KEV Vuln Analysis [dim](on the last scan)[/dim]")
+        t.add_row("7", "Generate AI Report      [dim](on the last scan)[/dim]")
+        t.add_row("8", "Saved Reports")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,
@@ -202,6 +206,47 @@ class CommandCenter:
             )
         console.print(t)
         ui.success(f"{len(results)} web endpoint(s) fingerprinted.")
+
+    def tool_nuclei(self):
+        scanner = NucleiScanner()
+        if not scanner.available:
+            ui.warn("nuclei is not installed / not on PATH.")
+            console.print("[dim]Install: https://github.com/projectdiscovery/nuclei "
+                          "(or `apt install nuclei` on Kali)[/dim]")
+            return
+        default = self.last_target or ""
+        target = Prompt.ask("Target URL/host", default=default).strip()
+        if not target:
+            return
+        sev = Prompt.ask("Severities (comma-separated)", default="medium,high,critical").strip()
+        severities = [s.strip().lower() for s in sev.split(",") if s.strip()]
+
+        ui.info(f"Running nuclei against {target} [sev: {sev}] — this can take a while...")
+        findings = scanner.scan(target, severities=severities)
+        if findings is None:
+            ui.warn("nuclei became unavailable.")
+            return
+        self.last_nuclei = findings
+        if not findings:
+            ui.success("nuclei finished — no findings at the selected severities.")
+            return
+
+        t = Table(title=f"{target} — Nuclei Findings ({len(findings)})")
+        t.add_column("Severity")
+        t.add_column("Template", style="cyan")
+        t.add_column("Name")
+        t.add_column("Matched At")
+        for f in findings:
+            sv = f["severity"]
+            t.add_row(
+                f"[{ui.SEVERITY_COLORS.get(sv, 'dim')}]{sv}[/]",
+                f["template_id"],
+                f["name"] or "[dim]-[/dim]",
+                f["matched_at"] or "[dim]-[/dim]",
+            )
+        console.print(t)
+        crit_high = sum(1 for f in findings if f["severity"] in ("CRITICAL", "HIGH"))
+        ui.success(f"{len(findings)} findings ({crit_high} critical/high).")
 
     def tool_vuln(self):
         if not self.last_results:
