@@ -26,13 +26,18 @@ def run_autopilot(target, scan_type="2", use_ai=True, use_nuclei=True,
 
     # [1] Nmap
     log("[1/5] Nmap scan...")
+    scanner = NetworkScanner()
     try:
-        results = NetworkScanner().scan_target(target, scan_type)
+        results = scanner.scan_target(target, scan_type)
     except Exception as e:
         log(f"nmap failed: {e}")
         results = []
     if not results:
         return None
+    scan_meta = scanner.scan_meta
+    if scan_meta.get("protected"):
+        log(f"      note: {scan_meta.get('total_open')} ports open but only "
+            f"{scan_meta.get('confirmed')} confirmed — target likely WAF/anti-scan")
 
     # [2] CVE / KEV / EPSS / exploit intel (VulnChecker chains ExploitIntel internally)
     log("[2/5] CVE / KEV / EPSS / exploit enrichment...")
@@ -85,5 +90,5 @@ def run_autopilot(target, scan_type="2", use_ai=True, use_nuclei=True,
 
     return reporter.build_report_data(
         target, SCAN_LABELS.get(scan_type, scan_type), enriched, analysis,
-        web=web, nuclei=nuclei, nuclei_meta=nuclei_meta,
+        web=web, nuclei=nuclei, nuclei_meta=nuclei_meta, scan_meta=scan_meta,
     )

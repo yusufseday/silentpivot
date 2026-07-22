@@ -33,6 +33,7 @@ class CommandCenter:
         self.last_scan_type = None
         self.last_results = None  # findings enriched with CVE data
         self.last_nuclei = None   # last nuclei findings
+        self.last_scan_meta = {}  # multi-IP / protected-target context
 
     # ---------- Menu loop ----------
     def run(self):
@@ -148,7 +149,8 @@ class CommandCenter:
         scan_type = Prompt.ask("Scan type", choices=["1", "2", "3"], default="2")
 
         ui.info(f"Scanning {target} ({SCAN_LABELS[scan_type]})...")
-        results = NetworkScanner().scan_target(target, scan_type)
+        scanner = NetworkScanner()
+        results = scanner.scan_target(target, scan_type)
         if not results:
             ui.warn("No open ports found, or the host is down.")
             return
@@ -157,10 +159,45 @@ class CommandCenter:
         ui.info("Verifying vulnerabilities against NVD + CISA KEV...")
         enriched = VulnChecker().check_vulnerabilities(results)
         self.last_target, self.last_scan_type, self.last_results = target, scan_type, enriched
+        self.last_scan_meta = scanner.scan_meta
 
         console.print()
-        ui.print_summary_table(enriched)
-        ui.success("Scan complete. Press [5] for an AI report, [4] for CVE details.")
+        self._show_scan_context(scanner.scan_meta)
+        self._show_scan_results(enriched, scanner.scan_meta)
+        ui.success("Scan complete. Press [7] for an AI report, [6] for CVE details.")
+
+    def _show_scan_context(self, meta):
+        """Surface the important context so nothing escapes the user's eye."""
+        ips = meta.get("ips") or []
+        if len(ips) > 1:
+            others = [ip for ip in ips if ip != meta.get("scanned_ip")]
+            ui.warn(f"Target resolves to {len(ips)} IPs; scanned "
+                    f"[bold]{meta.get('scanned_ip')}[/bold]. "
+                    f"Others: {', '.join(others)}")
+            console.print("[dim]    (scan an IP directly to pin a specific node)[/dim]")
+        if meta.get("protected"):
+            ui.warn(f"{meta.get('total_open')} ports responded but only "
+                    f"{meta.get('confirmed')} could be confirmed — target likely behind "
+                    f"a WAF / anti-scan device. Treat these results as deceptive.")
+
+    def _show_scan_results(self, enriched, meta):
+        """Layered view: confirmed services up front; noise collapsed but not lost."""
+        confirmed = [r for r in enriched if r.get("confirmed")]
+        unconfirmed = [r for r in enriched if not r.get("confirmed")]
+
+        if meta.get("protected"):
+            # Deceptive target: show only confirmed, collapse the phantom ports.
+            if confirmed:
+                ui.print_summary_table(confirmed, title="Confirmed Services")
+            else:
+                ui.info("No services could be confirmed on this host.")
+            if unconfirmed:
+                console.print(f"[dim]+ {len(unconfirmed)} unconfirmed ports hidden "
+                              f"(no service banner, likely decoy) — full list is saved "
+                              f"in the report[/dim]")
+        else:
+            # Normal target: show everything (unconfirmed just lack a version).
+            ui.print_summary_table(enriched)
 
     def tool_subdomain(self):
         domain = Prompt.ask("Target domain (e.g. example.com)").strip()
@@ -369,7 +406,7 @@ class CommandCenter:
         fmt = Prompt.ask("Report format", choices=["md", "json"], default="md")
         report = reporter.build_report_data(
             self.last_target, SCAN_LABELS.get(self.last_scan_type, "?"),
-            self.last_results, analysis,
+            self.last_results, analysis, scan_meta=self.last_scan_meta,
         )
         path = reporter.save_report(report, fmt=fmt)
         ui.success(f"Report saved: {path}")

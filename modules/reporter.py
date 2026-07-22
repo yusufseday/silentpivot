@@ -24,7 +24,7 @@ def _worst_cve(cves):
 
 
 def build_report_data(target, scan_type, results, analysis=None,
-                      web=None, nuclei=None, nuclei_meta=None):
+                      web=None, nuclei=None, nuclei_meta=None, scan_meta=None):
     """The single structured data model every output format is built from."""
     try:
         ip = socket.gethostbyname(target)
@@ -45,6 +45,7 @@ def build_report_data(target, scan_type, results, analysis=None,
         "web": web or [],
         "nuclei": nuclei or [],
         "nuclei_meta": nuclei_meta or {},
+        "scan_meta": scan_meta or {},
         "ai_analysis": analysis,
     }
 
@@ -67,6 +68,23 @@ def to_markdown(report):
         f"- **Scan Type:** {report['scan_type']}",
         f"- **Date:** {report['timestamp']}",
         f"- **Open Ports:** {report['open_ports']}  |  **Actively Exploited (KEV):** {report['kev_count']}",
+    ]
+
+    # Scan notes: multi-IP + protected-target context (nothing escapes the reader).
+    sm = report.get("scan_meta") or {}
+    notes = []
+    if len(sm.get("ips") or []) > 1:
+        others = [ip for ip in sm["ips"] if ip != sm.get("scanned_ip")]
+        notes.append(f"Target resolves to {len(sm['ips'])} IPs (scanned "
+                     f"{sm.get('scanned_ip')}; others: {', '.join(others)}).")
+    if sm.get("protected"):
+        notes.append(f"{sm.get('total_open')} ports responded but only "
+                     f"{sm.get('confirmed')} confirmed — likely WAF/anti-scan device; "
+                     f"unconfirmed ports may be decoys.")
+    if notes:
+        lines += ["", "> **Scan Notes:** " + " ".join(notes)]
+
+    lines += [
         "",
         "## Findings",
         "",
