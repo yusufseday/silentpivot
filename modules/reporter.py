@@ -81,6 +81,8 @@ def to_markdown(report):
         notes.append(f"{sm.get('total_open')} ports responded but only "
                      f"{sm.get('confirmed')} confirmed — likely WAF/anti-scan device; "
                      f"unconfirmed ports may be decoys.")
+    if sm.get("waf"):
+        notes.append(f"WAF/CDN detected via headers: {', '.join(sm['waf'])}.")
     if notes:
         lines += ["", "> **Scan Notes:** " + " ".join(notes)]
 

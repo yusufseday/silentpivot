@@ -35,7 +35,10 @@ class NetworkScanner:
             nmap_args = '-p- -sV -O -T4'
         else:
             print(f"[!] Starting Standard Scan (Top 1000 ports + services) on {target}...")
-            nmap_args = '-p 1-1000 -sV -T4'
+            # --top-ports 1000 = the 1000 statistically most common ports (spread across
+            # the whole range), so high-value services like RDP(3389), MySQL(3306),
+            # web-alt(8080/8443) are covered — unlike a sequential -p 1-1000.
+            nmap_args = '--top-ports 1000 -sV -T4'
 
         all_ips = self._resolve_all(target)
         try:

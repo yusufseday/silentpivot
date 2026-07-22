@@ -177,8 +177,23 @@ class CommandCenter:
             if len(scan_targets) > 1:
                 console.rule(f"[cyan]{tgt}[/cyan]")
             self._show_scan_context(metas[tgt])
+            self._check_waf(tgt, subset, metas[tgt])
             self._show_scan_results(subset, metas[tgt])
         ui.success("Scan complete. Press [7] for an AI report, [6] for CVE details.")
+
+    def _check_waf(self, host, results, meta):
+        """Header-based WAF/CDN detection on open web ports (reliable in any mode)."""
+        web_ports = [r["port"] for r in results if r["port"] in WEB_PORTS]
+        if not web_ports:
+            return
+        try:
+            wafs = WebProber().detect_waf(host, web_ports)
+        except Exception:
+            wafs = []
+        if wafs:
+            meta["waf"] = wafs
+            ui.warn(f"WAF/CDN detected: [bold magenta]{', '.join(wafs)}[/bold magenta] "
+                    f"— responses are likely filtered/challenged, treat with care")
 
     def _select_scan_targets(self, target):
         """Return the list of hosts to scan. Prompts only when a domain resolves

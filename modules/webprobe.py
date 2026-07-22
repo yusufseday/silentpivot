@@ -85,6 +85,16 @@ class WebProber:
                     break  # one working scheme per port is enough
         return results
 
+    def detect_waf(self, host, ports):
+        """Lightweight WAF/CDN check on web ports via response headers.
+        Catches WAFs (e.g. Imperva Incapsula) even when nmap sees few ports,
+        because it reads the actual response fingerprint, not the port count."""
+        wafs = set()
+        for r in self.probe_host(host, ports=ports):
+            for w in r.get("waf") or []:
+                wafs.add(w)
+        return sorted(wafs)
+
     def _probe_url(self, url):
         try:
             resp = self.session.get(
