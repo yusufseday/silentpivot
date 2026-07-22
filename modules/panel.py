@@ -162,7 +162,13 @@ class CommandCenter:
             metas[tgt] = scanner.scan_meta
 
         if not raw_all:
-            ui.warn("No open ports found, or the host(s) down.")
+            # Distinguish "reachable but firewalled" from "genuinely down/no services".
+            if any(m.get("blocked") for m in metas.values()):
+                ui.warn("Host is reachable but every scanned port is filtered/closed.")
+                console.print("[dim]    A firewall is blocking the scan — often your own "
+                              "network (restricted/guest Wi-Fi). Try a different network.[/dim]")
+            else:
+                ui.warn("No open ports found, or the host is down.")
             return
 
         # Auto-enrich the aggregate with CVE + KEV (single flow, no extra clicks)

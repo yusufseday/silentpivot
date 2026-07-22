@@ -92,13 +92,16 @@ class NetworkScanner:
             return []
 
         scan_results = []
+        state_counts = {}  # open/closed/filtered tallies across scanned ports
         for host in self.nm.all_hosts():
             for proto in self.nm[host].all_protocols():
                 ports = self.nm[host][proto].keys()
                 for port in ports:
                     service = self.nm[host][proto][port]
+                    st = service.get('state', 'unknown')
+                    state_counts[st] = state_counts.get(st, 0) + 1
                     # Noise filter: only open ports make it into the report.
-                    if service.get('state') != 'open':
+                    if st != 'open':
                         continue
                     # Nmap -sV often returns CPE and product name too;
                     # these are far more accurate than version for CVE matching.
@@ -121,10 +124,11 @@ class NetworkScanner:
                         "confirmed": confirmed,
                     })
 
-        self.scan_meta = self._build_meta(all_ips, scan_results)
+        self.scan_meta = self._build_meta(all_ips, scan_results, state_counts)
         return scan_results
 
-    def _build_meta(self, all_ips, scan_results):
+    def _build_meta(self, all_ips, scan_results, state_counts=None):
+        state_counts = state_counts or {}
         scanned_ip = self.nm.all_hosts()[0] if self.nm.all_hosts() else None
         total = len(scan_results)
         confirmed = sum(1 for r in scan_results if r["confirmed"])
@@ -132,6 +136,11 @@ class NetworkScanner:
         # Many open ports but almost nothing identifiable => likely a security
         # appliance / CDN answering every port (anti-recon), results are deceptive.
         protected = total >= 15 and ratio < 0.2
+        # If the host answered on some ports (closed = got an RST) but nothing is
+        # open, the target is reachable and something is filtering — often a
+        # firewall or the user's own (guest/corporate) network.
+        blocked = total == 0 and (state_counts.get("closed", 0) > 0
+                                  or state_counts.get("filtered", 0) > 0)
         return {
             "ips": all_ips,
             "scanned_ip": scanned_ip,
@@ -139,4 +148,6 @@ class NetworkScanner:
             "confirmed": confirmed,
             "unconfirmed": total - confirmed,
             "protected": protected,
+            "state_counts": state_counts,
+            "blocked": blocked,
         }
