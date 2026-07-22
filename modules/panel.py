@@ -199,8 +199,14 @@ class CommandCenter:
         """Return the list of hosts to scan. Prompts only when a domain resolves
         to more than one IP (single-IP / IP targets scan straight through)."""
         ips = NetworkScanner._resolve_all(target)
+        # Drop IPv6 addresses if this machine has no IPv6 route — otherwise those
+        # scans just time out. Works on any network (auto-detected), not just ours.
+        v6 = [ip for ip in ips if ":" in ip]
+        if v6 and not NetworkScanner.has_ipv6():
+            ips = [ip for ip in ips if ":" not in ip]
+            ui.info(f"Skipping {len(v6)} IPv6 address(es) — no IPv6 connectivity here")
         if len(ips) <= 1:
-            return [target]
+            return ips or [target]
         console.print(f"\n[yellow]{target} resolves to {len(ips)} IPs:[/yellow]")
         for i, ip in enumerate(ips, 1):
             console.print(f"  [cyan]{i}[/cyan]  {ip}")
