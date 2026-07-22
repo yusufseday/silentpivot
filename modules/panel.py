@@ -148,23 +148,54 @@ class CommandCenter:
         console.print("[1] Fast  [2] Standard  [3] Deep")
         scan_type = Prompt.ask("Scan type", choices=["1", "2", "3"], default="2")
 
-        ui.info(f"Scanning {target} ({SCAN_LABELS[scan_type]})...")
-        scanner = NetworkScanner()
-        results = scanner.scan_target(target, scan_type)
-        if not results:
-            ui.warn("No open ports found, or the host is down.")
+        # If the host resolves to multiple IPs, let the user pin one (or scan all).
+        scan_targets = self._select_scan_targets(target)
+
+        raw_all, metas = [], {}
+        for tgt in scan_targets:
+            ui.info(f"Scanning {tgt} ({SCAN_LABELS[scan_type]})...")
+            scanner = NetworkScanner()
+            res = scanner.scan_target(tgt, scan_type)
+            for r in res:
+                r["ip"] = tgt
+            raw_all.extend(res)
+            metas[tgt] = scanner.scan_meta
+
+        if not raw_all:
+            ui.warn("No open ports found, or the host(s) down.")
             return
 
-        # Auto-enrich with CVE + KEV (single flow, no extra clicks)
+        # Auto-enrich the aggregate with CVE + KEV (single flow, no extra clicks)
         ui.info("Verifying vulnerabilities against NVD + CISA KEV...")
-        enriched = VulnChecker().check_vulnerabilities(results)
+        enriched = VulnChecker().check_vulnerabilities(raw_all)
         self.last_target, self.last_scan_type, self.last_results = target, scan_type, enriched
-        self.last_scan_meta = scanner.scan_meta
+        self.last_scan_meta = metas[scan_targets[0]] if len(scan_targets) == 1 else {}
 
-        console.print()
-        self._show_scan_context(scanner.scan_meta)
-        self._show_scan_results(enriched, scanner.scan_meta)
+        # Display per scanned target so multi-IP results stay clear.
+        for tgt in scan_targets:
+            subset = [r for r in enriched if r.get("ip") == tgt]
+            if len(scan_targets) > 1:
+                console.rule(f"[cyan]{tgt}[/cyan]")
+            self._show_scan_context(metas[tgt])
+            self._show_scan_results(subset, metas[tgt])
         ui.success("Scan complete. Press [7] for an AI report, [6] for CVE details.")
+
+    def _select_scan_targets(self, target):
+        """Return the list of hosts to scan. Prompts only when a domain resolves
+        to more than one IP (single-IP / IP targets scan straight through)."""
+        ips = NetworkScanner._resolve_all(target)
+        if len(ips) <= 1:
+            return [target]
+        console.print(f"\n[yellow]{target} resolves to {len(ips)} IPs:[/yellow]")
+        for i, ip in enumerate(ips, 1):
+            console.print(f"  [cyan]{i}[/cyan]  {ip}")
+        console.print("  [cyan]A[/cyan]  Scan all sequentially")
+        choice = Prompt.ask("Which to scan", default="1").strip().lower()
+        if choice == "a":
+            return ips
+        if choice.isdigit() and 1 <= int(choice) <= len(ips):
+            return [ips[int(choice) - 1]]
+        return [ips[0]]
 
     def _show_scan_context(self, meta):
         """Surface the important context so nothing escapes the user's eye."""
