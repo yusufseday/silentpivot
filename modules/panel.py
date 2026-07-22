@@ -137,7 +137,7 @@ class CommandCenter:
             console.print(RichPanel.fit("[bold cyan]ENGAGEMENT REPORT[/bold cyan]"))
             console.print(Markdown(report["ai_analysis"]))
 
-        fmt = Prompt.ask("Save report format", choices=["md", "json"], default="md")
+        fmt = Prompt.ask("Save report format", choices=["md", "json", "html"], default="md")
         path = reporter.save_report(report, fmt=fmt)
         ui.success(f"Unified report saved: {path}")
 
@@ -449,7 +449,7 @@ class CommandCenter:
         from rich.markdown import Markdown
         console.print(Markdown(analysis))
 
-        fmt = Prompt.ask("Report format", choices=["md", "json"], default="md")
+        fmt = Prompt.ask("Report format", choices=["md", "json", "html"], default="md")
         report = reporter.build_report_data(
             self.last_target, SCAN_LABELS.get(self.last_scan_type, "?"),
             self.last_results, analysis, scan_meta=self.last_scan_meta,

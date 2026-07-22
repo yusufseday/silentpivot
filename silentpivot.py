@@ -62,7 +62,7 @@ def build_parser():
                    help="Autopilot: full engagement pipeline (nmap+web+nuclei+CVE+AI)")
     p.add_argument("--no-ai", action="store_true", help="Skip AI analysis (scan + CVE only)")
     p.add_argument("-o", "--output", help="Report file path (default: auto under data/)")
-    p.add_argument("-f", "--format", default="md", choices=["md", "json"],
+    p.add_argument("-f", "--format", default="md", choices=["md", "json", "html"],
                    help="Report format (default: md)")
     p.add_argument("-q", "--quiet", action="store_true", help="Reduce terminal output")
     p.add_argument("--no-save", action="store_true", help="Do not save the report to disk")
