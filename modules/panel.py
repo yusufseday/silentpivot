@@ -514,8 +514,9 @@ class CommandCenter:
             return
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
+        extra = self._ai_payloads("403 bypass path variants")
         ui.info(f"Trying 403/401 bypass techniques on {url} ...")
-        result = Bypass403().run(url)
+        result = Bypass403().run(url, extra_payloads=extra)
         if result["baseline"] is None:
             ui.error("Could not reach the URL.")
             return
@@ -583,8 +584,9 @@ class CommandCenter:
         url = Prompt.ask("Target URL").strip()
         if not url:
             return
+        extra = self._ai_payloads("path traversal / LFI")
         ui.info(f"Fuzzing {url} for path traversal / LFI ...")
-        result = PathTraversal().run(url)
+        result = PathTraversal().run(url, extra_payloads=extra)
         if result["used_common_params"]:
             ui.info(f"No query parameter in the URL — trying common names: "
                     f"{', '.join(result['params'][:6])}...")
@@ -605,24 +607,28 @@ class CommandCenter:
         for h in hits[:3]:
             console.print(f"    [dim]{h['param']}:[/dim] [green]{h['evidence']}[/green]")
 
+    def _ai_payloads(self, kind):
+        """Shared AI-payload helper for the active modules (ssrf / lfi / 403).
+        Uses the last web fingerprint as context; the calling module still verifies
+        every suggested payload by evidence, so AI never decides 'vulnerable'."""
+        if not Confirm.ask("Use AI to add stack-specific payloads?", default=False):
+            return []
+        ctx = {"web": [{k: w.get(k) for k in ("server", "tech", "waf")}
+                       for w in (self.last_web or [])]}
+        ui.info(f"Asking AI for target-tailored {kind} payloads...")
+        extra = SilentAI().suggest_payloads(ctx, kind)
+        if extra:
+            ui.info(f"AI proposed {len(extra)} extra payload(s) — testing them too.")
+        else:
+            ui.warn("AI returned no usable payloads (check AI_* config in .env).")
+        return extra
+
     def tool_ssrf(self):
         console.print("[dim]Tip: include a URL-taking parameter, e.g. ?url=https://x[/dim]")
         url = Prompt.ask("Target URL").strip()
         if not url:
             return
-
-        # AI-payload integration: use the last web fingerprint (stack/WAF) to have the
-        # AI propose target-tailored payloads. The engine still verifies every one.
-        extra = []
-        if Confirm.ask("Use AI to add stack-specific payloads?", default=False):
-            ctx = {"url": url,
-                   "web": [{k: w.get(k) for k in ("server", "tech", "waf")}
-                           for w in (self.last_web or [])]}
-            ui.info("Asking AI for target-tailored SSRF payloads...")
-            extra = SilentAI().suggest_payloads(ctx, "ssrf")
-            if extra:
-                ui.info(f"AI proposed {len(extra)} extra payload(s) — testing them too.")
-
+        extra = self._ai_payloads("ssrf")
         ui.info(f"Scanning {url} for reflected SSRF ...")
         result = SSRFScanner().run(url, extra_payloads=extra)
         hits = result["hits"]

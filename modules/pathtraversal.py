@@ -94,8 +94,9 @@ class PathTraversal:
                     "status": r.status_code, "evidence": evidence, "url": test_url}
         return None
 
-    def run(self, url):
-        """Fuzz each parameter with traversal/LFI payloads. Returns {url, params, hits}."""
+    def run(self, url, extra_payloads=None):
+        """Fuzz each parameter with traversal/LFI payloads. `extra_payloads` (e.g.
+        AI-suggested) are tested exactly like the built-ins. Returns {url, params, hits}."""
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         self._base_url = url
@@ -106,7 +107,8 @@ class PathTraversal:
             params = _COMMON_PARAMS
             used_common = True
 
-        targets = [(param, pl) for param in params for pl in _PAYLOADS]
+        payloads = _PAYLOADS + [x for x in (extra_payloads or []) if x not in _PAYLOADS]
+        targets = [(param, pl) for param in params for pl in payloads]
         hits = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
             for res in ex.map(self._try, targets):

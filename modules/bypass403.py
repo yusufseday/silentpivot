@@ -44,12 +44,17 @@ class Bypass403:
         except requests.RequestException:
             return None
 
-    def _build_attempts(self, url):
+    def _build_attempts(self, url, extra_payloads=None):
         """Yield (technique, method, url, headers) tuples to try."""
         p = urlparse(url)
         base = f"{p.scheme}://{p.netloc}"
         path = p.path or "/"
         attempts = []
+
+        # AI-suggested path variants (each tested and verified like the built-ins)
+        for extra in (extra_payloads or []):
+            test = base + extra if extra.startswith("/") else base + path + extra
+            attempts.append((f"ai: {extra}", "GET", test, None))
 
         # 1) Header spoofing (value 127.0.0.1 = pretend to be localhost/internal)
         for h in _IP_HEADERS:
@@ -86,16 +91,17 @@ class Bypass403:
                     "status": status, "length": length}
         return None
 
-    def run(self, url):
+    def run(self, url, extra_payloads=None):
         """Returns {url, baseline, applicable, hits}. `hits` = techniques that got
-        a < 400 response. `applicable` is False if the URL isn't 401/403 to begin with."""
+        a < 400 response. `applicable` is False if the URL isn't 401/403 to begin with.
+        `extra_payloads` (e.g. AI-suggested path variants) are tested like the built-ins."""
         base = self._req("GET", url)
         baseline = base[0] if base else None
         if baseline not in (401, 403):
             return {"url": url, "baseline": baseline, "applicable": False, "hits": []}
 
         hits = []
-        attempts = self._build_attempts(url)
+        attempts = self._build_attempts(url, extra_payloads)
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
             for res in ex.map(self._try, attempts):
                 if res:
