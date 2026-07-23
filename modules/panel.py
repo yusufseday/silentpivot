@@ -19,6 +19,7 @@ from modules.webprobe import WebProber, WEB_PORTS
 from modules.nuclei import NucleiScanner
 from modules.bypass403 import Bypass403
 from modules.leakfinder import LeakFinder
+from modules.pathtraversal import PathTraversal
 from modules.autopilot import run_autopilot
 from modules import reporter
 
@@ -67,6 +68,7 @@ class CommandCenter:
         "8": "tool_reports",
         "9": "tool_bypass403",
         "l": "tool_leak",
+        "p": "tool_pathtraversal",
         "0": "exit",
     }
 
@@ -87,6 +89,7 @@ class CommandCenter:
         t.add_row("8", "Saved Reports")
         t.add_row("9", "403 Bypass              [dim](forbidden-path bypass techniques)[/dim]")
         t.add_row("L", "Leak / Secret Finder    [dim](exposed keys, tokens, .git/.env)[/dim]")
+        t.add_row("P", "Path Traversal / LFI    [dim](parameter file-read fuzzing)[/dim]")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,
@@ -571,6 +574,33 @@ class CommandCenter:
         else:
             ui.warn(f"{len(secrets)} secret(s), {len(exposed)} exposed file(s) — "
                     f"verify (low-confidence hits may be false positives).")
+
+    def tool_pathtraversal(self):
+        console.print("[dim]Tip: include a parameter, e.g. https://host/view.php?file=welcome[/dim]")
+        url = Prompt.ask("Target URL").strip()
+        if not url:
+            return
+        ui.info(f"Fuzzing {url} for path traversal / LFI ...")
+        result = PathTraversal().run(url)
+        if result["used_common_params"]:
+            ui.info(f"No query parameter in the URL — trying common names: "
+                    f"{', '.join(result['params'][:6])}...")
+        hits = result["hits"]
+        if not hits:
+            ui.success("No path traversal / LFI found (no file-read evidence).")
+            return
+        t = Table(title=f"{result['url']} — Path Traversal / LFI Hits")
+        t.add_column("Param", style="cyan")
+        t.add_column("Signature", style="bold red")
+        t.add_column("Status", justify="right")
+        t.add_column("Payload")
+        for h in hits:
+            payload = h["payload"] if len(h["payload"]) < 45 else h["payload"][:42] + "..."
+            t.add_row(h["param"], h["signature"], str(h["status"]), payload)
+        console.print(t)
+        ui.error(f"⚠ {len(hits)} confirmed file-read(s) — evidence found in the response.")
+        for h in hits[:3]:
+            console.print(f"    [dim]{h['param']}:[/dim] [green]{h['evidence']}[/green]")
 
     def tool_reports(self):
         files = sorted(glob.glob(os.path.join("data", "*.md")) +

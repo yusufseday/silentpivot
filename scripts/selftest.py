@@ -133,6 +133,15 @@ def c_leakfinder():
     return ok, f"caught {hits} (placeholder skipped)"
 
 
+def c_pathtraversal():
+    from modules.pathtraversal import PathTraversal
+    pt = PathTraversal()
+    hit = pt._check("root:x:0:0:root:/root:/bin/bash", "x")
+    clean = pt._check("<html>welcome</html>", "x")
+    ok = hit and hit[0] == "Linux /etc/passwd" and clean is None
+    return ok, f"passwd signature -> {hit[0] if hit else None}, clean page -> {clean}"
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -146,6 +155,7 @@ def main():
     check("Nuclei wrapper (parse)", c_nuclei)
     check("403 bypass techniques", c_bypass403)
     check("Leak/secret regex core", c_leakfinder)
+    check("Path traversal signatures", c_pathtraversal)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)
