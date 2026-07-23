@@ -5,18 +5,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Provider-agnostic defaults. Any OpenAI-compatible endpoint works by setting these
+# in .env — Groq (fast, free), OpenAI/Claude (strongest reasoning), Ollama (local &
+# private — keeps sensitive scan data on your machine), OpenRouter (many models).
+DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
 
 class SilentAI:
     def __init__(self):
+        # api_key can be a dummy value for local providers (e.g. Ollama).
         self.client = OpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=os.getenv("AI_API_KEY")
+            base_url=os.getenv("AI_BASE_URL", DEFAULT_BASE_URL),
+            api_key=os.getenv("AI_API_KEY") or "not-needed",
         )
+        self.model = os.getenv("AI_MODEL", DEFAULT_MODEL)
 
     def analyze_results(self, scan_data):
-        # One of the fast, capable models on Groq
-        model_name = "llama-3.3-70b-versatile"
-
         prompt = f"""
         You are a Senior Penetration Tester. Below is Nmap scan data together with a
         list of VERIFIED CVEs from the NVD (NIST) database:
@@ -40,12 +45,11 @@ class SilentAI:
         4. **Hardening Recommendations** — concrete, actionable fixes.
         """
 
-        return self._complete(model_name, prompt)
+        return self._complete(prompt)
 
     def analyze_engagement(self, findings, web=None, nuclei=None):
         """Engagement-level analysis that sees services+CVEs, web fingerprints and
         nuclei findings together, and prioritizes by real exploitability."""
-        model_name = "llama-3.3-70b-versatile"
         web = web or []
         nuclei = nuclei or []
 
@@ -100,12 +104,12 @@ class SilentAI:
            searchsploit, etc.).
         5. **Remediation** — concrete fixes, most important first.
         """
-        return self._complete(model_name, prompt)
+        return self._complete(prompt)
 
-    def _complete(self, model_name, prompt):
+    def _complete(self, prompt):
         try:
             response = self.client.chat.completions.create(
-                model=model_name,
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.5
             )
