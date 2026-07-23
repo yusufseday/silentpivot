@@ -28,6 +28,7 @@ class CommandCenter:
         self.last_scan_type = None
         self.last_results = None  # findings enriched with CVE data
         self.last_nuclei = None   # last nuclei findings
+        self.last_web = []        # last web-probe fingerprints
         self.last_scan_meta = {}  # multi-IP / protected-target context
 
     # ---------- Menu loop ----------
@@ -53,6 +54,7 @@ class CommandCenter:
 
     MENU = {
         "a": "tool_autopilot",
+        "?": "tool_copilot",
         "1": "tool_nmap",
         "2": "tool_subdomain",
         "3": "tool_portcheck",
@@ -69,6 +71,7 @@ class CommandCenter:
         t.add_column(style="bold cyan", justify="right")
         t.add_column()
         t.add_row("A", "[bold green]Autopilot / Full Engagement[/bold green] [dim](runs the whole pipeline)[/dim]")
+        t.add_row("?", "[bold magenta]AI Co-pilot[/bold magenta]             [dim](what should I do next?)[/dim]")
         t.add_row("", "")
         t.add_row("1", "Nmap Port Scan          [dim](service/version detection)[/dim]")
         t.add_row("2", "Subdomain Discovery     [dim](crt.sh passive OSINT + DNS)[/dim]")
@@ -90,6 +93,23 @@ class CommandCenter:
                 f"[dim]| {len(self.last_results)} open ports[/dim]")
 
     # ---------- Tools ----------
+    def tool_copilot(self):
+        if not self.last_results and not self.last_nuclei:
+            ui.warn("Run a scan first ([A] Autopilot or [1] Nmap) so the co-pilot has "
+                    "something to reason about.")
+            return
+        ui.info("Co-pilot reviewing the current recon state...")
+        advice = SilentAI().copilot(
+            findings=self.last_results or [],
+            web=self.last_web,
+            nuclei=self.last_nuclei or [],
+            scan_meta=self.last_scan_meta,
+            target=self.last_target,
+        )
+        console.print(RichPanel.fit("[bold magenta]AI CO-PILOT — NEXT MOVES[/bold magenta]"))
+        console.print(Markdown(advice))
+        console.print("[dim]Suggestions only — verify each against your authorized scope.[/dim]")
+
     def tool_autopilot(self):
         target = Prompt.ask("Target IP/domain", default=self.last_target or "").strip()
         if not target:
@@ -109,6 +129,7 @@ class CommandCenter:
         self.last_scan_type = scan_type
         self.last_results = report["findings"]
         self.last_nuclei = report["nuclei"]
+        self.last_web = report["web"]
 
         console.print()
         ui.print_summary_table(report["findings"])
@@ -337,6 +358,7 @@ class CommandCenter:
         if not results:
             ui.warn("No reachable web services found.")
             return
+        self.last_web = results
 
         self._print_web_table(results, title=f"{host} — Web Fingerprint")
         ui.success(f"{len(results)} web endpoint(s) fingerprinted.")

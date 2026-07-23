@@ -47,13 +47,9 @@ class SilentAI:
 
         return self._complete(prompt)
 
-    def analyze_engagement(self, findings, web=None, nuclei=None):
-        """Engagement-level analysis that sees services+CVEs, web fingerprints and
-        nuclei findings together, and prioritizes by real exploitability."""
-        web = web or []
-        nuclei = nuclei or []
-
-        # Slim the service data so the prompt stays compact (drop verbose poc_urls).
+    @staticmethod
+    def _build_context(findings, web, nuclei):
+        """Compact, prompt-friendly view of the recon state (shared by report + co-pilot)."""
         slim_services = []
         for r in findings:
             cves = [{k: c.get(k) for k in
@@ -64,7 +60,6 @@ class SilentAI:
                 "product": r.get("product"), "version": r.get("version"),
                 "cves": cves,
             })
-
         sev_counts = {}
         for f in nuclei:
             sev_counts[f["severity"]] = sev_counts.get(f["severity"], 0) + 1
@@ -72,8 +67,7 @@ class SilentAI:
             {k: f.get(k) for k in ("template_id", "name", "severity", "matcher_name", "matched_at")}
             for f in nuclei if f.get("severity") in ("CRITICAL", "HIGH", "MEDIUM")
         ][:30]
-
-        context = {
+        return {
             "services": slim_services,
             "web_fingerprint": [
                 {k: w.get(k) for k in ("url", "status", "title", "server", "tech", "waf")}
@@ -82,6 +76,11 @@ class SilentAI:
             "nuclei_summary": sev_counts,
             "nuclei_notable": notable,
         }
+
+    def analyze_engagement(self, findings, web=None, nuclei=None):
+        """Engagement-level analysis that sees services+CVEs, web fingerprints and
+        nuclei findings together, and prioritizes by real exploitability."""
+        context = self._build_context(findings, web or [], nuclei or [])
 
         prompt = f"""
         You are a Senior Penetration Tester writing an engagement report. Below is the
@@ -103,6 +102,38 @@ class SilentAI:
         4. **Exploitation Path** — the most realistic route in, with tools (Metasploit,
            searchsploit, etc.).
         5. **Remediation** — concrete fixes, most important first.
+        """
+        return self._complete(prompt)
+
+    def copilot(self, findings=None, web=None, nuclei=None, scan_meta=None, target=None):
+        """Advisory 'what should I do next?' — reads the current recon state and
+        recommends prioritized, concrete next actions (tools/commands/endpoints/CVEs)."""
+        context = self._build_context(findings or [], web or [], nuclei or [])
+        context["target"] = target
+        context["waf"] = (scan_meta or {}).get("waf")
+
+        prompt = f"""
+        You are a Senior Penetration Tester acting as a hands-on co-pilot. Given the
+        current recon state below, tell the operator the highest-value NEXT ACTIONS.
+        {json.dumps(context, indent=2, ensure_ascii=False)}
+
+        RULES:
+        - Reference only the verified CVEs shown; never invent CVE numbers.
+        - Be specific and practical: name the exact tool, command, endpoint or CVE to
+          try, tied to what was actually found (e.g. "Jenkins on 8080 -> try /script
+          console, CVE-XXXX with metasploit module Y").
+        - Prioritize by real exploitability: KEV / high EPSS / public exploit, then
+          confirmed nuclei CRITICAL/HIGH, then everything else.
+        - If a WAF/CDN is present, account for it (evasion or note it may block).
+        - This is authorized testing; the operator will verify every suggestion, so be
+          direct. Do NOT claim anything is confirmed vulnerable without evidence.
+
+        Output concise Markdown (max ~8 concrete moves):
+        ## Next Moves (prioritized)
+        1. **action** — why it matters + the exact command/tool
+        ## Quick Wins
+        ## Watch Out
+        (WAF, rate-limits, or things likely to be false positives)
         """
         return self._complete(prompt)
 
