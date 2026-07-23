@@ -6,24 +6,19 @@ import glob
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from rich.panel import Panel as RichPanel
+from rich.markdown import Markdown
 
 from modules import ui
 from modules.ui import console
-from modules.scanner import NetworkScanner
+from modules.scanner import NetworkScanner, SCAN_LABELS
 from modules.vuln_checker import VulnChecker
 from modules.ai_engine import SilentAI
 from modules.subdomain import SubdomainScanner
 from modules.portcheck import PortChecker
 from modules.webprobe import WebProber, WEB_PORTS
-from modules.nuclei import NucleiScanner, SEVERITY_ORDER
+from modules.nuclei import NucleiScanner
 from modules.autopilot import run_autopilot
 from modules import reporter
-
-SCAN_LABELS = {
-    "1": "Fast (Top 100)",
-    "2": "Standard (1-1000 + version)",
-    "3": "Deep (All ports + OS)",
-}
 
 
 class CommandCenter:
@@ -118,22 +113,11 @@ class CommandCenter:
         console.print()
         ui.print_summary_table(report["findings"])
         if report["web"]:
-            wt = Table(title="Web Fingerprint")
-            wt.add_column("URL", style="cyan")
-            wt.add_column("Code", justify="right")
-            wt.add_column("Server")
-            wt.add_column("Tech")
-            wt.add_column("WAF/CDN")
-            for w in report["web"]:
-                wt.add_row(w["url"], str(w["status"]), w.get("server") or "-",
-                           ", ".join(w.get("tech") or []) or "-",
-                           ", ".join(w.get("waf") or []) or "-")
-            console.print(wt)
+            self._print_web_table(report["web"])
         if report["nuclei"]:
             crit_high = sum(1 for f in report["nuclei"] if f["severity"] in ("CRITICAL", "HIGH"))
             ui.info(f"Nuclei: {len(report['nuclei'])} findings ({crit_high} critical/high)")
         if report.get("ai_analysis"):
-            from rich.markdown import Markdown
             console.print(RichPanel.fit("[bold cyan]ENGAGEMENT REPORT[/bold cyan]"))
             console.print(Markdown(report["ai_analysis"]))
 
@@ -187,6 +171,29 @@ class CommandCenter:
             self._show_scan_results(subset, metas[tgt])
         ui.success("Scan complete. Press [7] for an AI report, [6] for CVE details.")
 
+    def _print_web_table(self, results, title="Web Fingerprint"):
+        """Render web-fingerprint results as a table (shared by webprobe + autopilot)."""
+        t = Table(title=title)
+        t.add_column("URL", style="cyan", no_wrap=False)
+        t.add_column("Code", justify="right")
+        t.add_column("Title")
+        t.add_column("Server")
+        t.add_column("Tech")
+        t.add_column("WAF/CDN")
+        for r in results:
+            code = r.get("status", 0)
+            code_style = "green" if code < 400 else ("yellow" if code < 500 else "red")
+            waf = r.get("waf") or []
+            t.add_row(
+                r.get("url", "-"),
+                f"[{code_style}]{code}[/]",
+                r.get("title") or "[dim]-[/dim]",
+                r.get("server") or "[dim]-[/dim]",
+                ", ".join(r.get("tech") or []) or "[dim]-[/dim]",
+                ("[bold magenta]" + ", ".join(waf) + "[/]") if waf else "[dim]-[/dim]",
+            )
+        console.print(t)
+
     def _check_waf(self, host, results, meta):
         """Header-based WAF/CDN detection on open web ports (reliable in any mode)."""
         web_ports = [r["port"] for r in results if r["port"] in WEB_PORTS]
@@ -204,7 +211,7 @@ class CommandCenter:
     def _select_scan_targets(self, target):
         """Return the list of hosts to scan. Prompts only when a domain resolves
         to more than one IP (single-IP / IP targets scan straight through)."""
-        ips = NetworkScanner._resolve_all(target)
+        ips = NetworkScanner.resolve_all(target)
         # Drop IPv6 addresses if this machine has no IPv6 route — otherwise those
         # scans just time out. Works on any network (auto-detected), not just ours.
         v6 = [ip for ip in ips if ":" in ip]
@@ -262,7 +269,7 @@ class CommandCenter:
         if not domain:
             return
         scanner = SubdomainScanner()
-        tool = scanner._detect_tool()
+        tool = scanner.detect_tool()
         engine = tool if tool else "passive OSINT (crt.sh, certspotter, OTX, ...)"
         ui.info(f"Enumerating {domain} via {engine}...")
         results = scanner.scan(domain, resolve=True)
@@ -331,25 +338,7 @@ class CommandCenter:
             ui.warn("No reachable web services found.")
             return
 
-        t = Table(title=f"{host} — Web Fingerprint")
-        t.add_column("URL", style="cyan", no_wrap=False)
-        t.add_column("Code", justify="right")
-        t.add_column("Title")
-        t.add_column("Server")
-        t.add_column("Technologies")
-        t.add_column("WAF/CDN")
-        for r in results:
-            code = r["status"]
-            code_style = "green" if code < 400 else ("yellow" if code < 500 else "red")
-            t.add_row(
-                r["url"],
-                f"[{code_style}]{code}[/]",
-                r["title"] or "[dim]-[/dim]",
-                r["server"] or "[dim]-[/dim]",
-                ", ".join(r["tech"]) or "[dim]-[/dim]",
-                ("[bold magenta]" + ", ".join(r["waf"]) + "[/]") if r["waf"] else "[dim]-[/dim]",
-            )
-        console.print(t)
+        self._print_web_table(results, title=f"{host} — Web Fingerprint")
         ui.success(f"{len(results)} web endpoint(s) fingerprinted.")
 
     def tool_nuclei(self):
@@ -458,7 +447,6 @@ class CommandCenter:
         ui.info("Sending data to AI analysis...")
         analysis = SilentAI().analyze_results(self.last_results)
         console.print(RichPanel.fit("[bold cyan]PENTEST REPORT[/bold cyan]"))
-        from rich.markdown import Markdown
         console.print(Markdown(analysis))
 
         fmt = Prompt.ask("Report format", choices=["md", "json", "html"], default="md")
@@ -471,7 +459,8 @@ class CommandCenter:
 
     def tool_reports(self):
         files = sorted(glob.glob(os.path.join("data", "*.md")) +
-                       glob.glob(os.path.join("data", "*.json")),
+                       glob.glob(os.path.join("data", "*.json")) +
+                       glob.glob(os.path.join("data", "*.html")),
                        key=os.path.getmtime, reverse=True)
         if not files:
             ui.warn("No saved reports yet.")
@@ -485,5 +474,11 @@ class CommandCenter:
         console.print(t)
         sel = Prompt.ask("View # (blank to skip)", default="").strip()
         if sel.isdigit() and 1 <= int(sel) <= len(files):
-            with open(files[int(sel) - 1], encoding="utf-8") as fh:
-                console.print(RichPanel(fh.read(), border_style="dim"))
+            path = files[int(sel) - 1]
+            if path.endswith(".html"):
+                # Raw HTML in a terminal is noise; point to the browser instead.
+                ui.info(f"Open in a browser: [cyan]{path}[/cyan]  "
+                        f"[dim](e.g. xdg-open / firefox {path})[/dim]")
+            else:
+                with open(path, encoding="utf-8") as fh:
+                    console.print(RichPanel(fh.read(), border_style="dim"))

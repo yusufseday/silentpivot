@@ -51,7 +51,7 @@ class SubdomainScanner:
             "hackertarget": self._src_hackertarget,
             "anubis": self._src_anubis,
         }
-        tool = self._detect_tool()
+        tool = self.detect_tool()
 
         merged = set()
         counts = {}
@@ -80,7 +80,7 @@ class SubdomainScanner:
 
     # ---------- External tools ----------
     @staticmethod
-    def _detect_tool():
+    def detect_tool():
         for name in EXTERNAL_TOOLS:
             if shutil.which(name):
                 return name

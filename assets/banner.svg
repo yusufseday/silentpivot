@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 210" width="580" height="210" font-family="'DejaVu Sans Mono','Consolas',monospace">
+  <rect width="580" height="210" rx="12" fill="#0d1017"/>
+  <text xml:space="preserve" x="20" y="42" fill="#3ddc84" font-size="16" font-weight="bold">
+    <tspan x="20" dy="0">   _____ _ _            _   ____  _            _</tspan>
+    <tspan x="20" dy="24">  / ____(_) |          | | |  _ \(_)          | |</tspan>
+    <tspan x="20" dy="24"> | (___  _| | ___ _ __ | |_| |_) |___   _____ | |_</tspan>
+    <tspan x="20" dy="24">  \___ \| | |/ _ \ '_ \| __|  __/| \ \ / / _ \| __|</tspan>
+    <tspan x="20" dy="24">  ____) | | |  __/ | | | |_| |   | |\ V / (_) | |_</tspan>
+    <tspan x="20" dy="24"> |_____/|_|_|\___|_| |_|\__|_|   |_| \_/ \___/ \__|</tspan>
+  </text>
+  <text x="20" y="192" fill="#8b98a5" font-size="13">        AI-powered recon &amp; vulnerability command center</text>
+</svg>

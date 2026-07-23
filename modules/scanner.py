@@ -4,6 +4,13 @@ import socket
 import ipaddress
 import functools
 
+# Single source of truth for scan-type labels (shared by panel, autopilot, CLI).
+SCAN_LABELS = {
+    "1": "Fast (Top 100)",
+    "2": "Standard (1-1000 + version)",
+    "3": "Deep (All ports + OS)",
+}
+
 
 @functools.lru_cache(maxsize=1)
 def _ipv6_available():
@@ -33,7 +40,7 @@ class NetworkScanner:
             sys.exit(1)
 
     @staticmethod
-    def _resolve_all(target):
+    def resolve_all(target):
         """All A/AAAA addresses a host resolves to (round-robin awareness).
         IPv4 is listed first so the default choice never lands on an IPv6 address
         the host may not even be reachable over."""
@@ -79,7 +86,7 @@ class NetworkScanner:
             # web-alt(8080/8443) are covered — unlike a sequential -p 1-1000.
             nmap_args = f'{base} {cap} --top-ports 1000 -sV -T4'
 
-        all_ips = self._resolve_all(target)
+        all_ips = self.resolve_all(target)
         try:
             self.nm.scan(target, arguments=nmap_args)
         except nmap.PortScannerError as e:

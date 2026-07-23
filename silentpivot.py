@@ -3,7 +3,7 @@ import argparse
 
 from modules import ui
 from modules.ui import console, print_summary_table
-from modules.scanner import NetworkScanner
+from modules.scanner import NetworkScanner, SCAN_LABELS
 from modules.ai_engine import SilentAI
 from modules.vuln_checker import VulnChecker
 from modules import reporter
@@ -14,11 +14,6 @@ SCAN_ALIASES = {
     "1": "1", "fast": "1", "quick": "1",
     "2": "2", "standard": "2", "std": "2",
     "3": "3", "deep": "3", "full": "3",
-}
-SCAN_LABELS = {
-    "1": "Fast (Top 100)",
-    "2": "Standard (1-1000 + version)",
-    "3": "Deep (All ports + OS)",
 }
 
 

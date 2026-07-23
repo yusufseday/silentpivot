@@ -12,6 +12,9 @@ class VulnChecker:
         self.base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
         # Optional NVD API key: raises the rate limit from 5/30s to 50/30s.
         self.api_key = os.getenv("NVD_API_KEY", "")
+        # NVD recommends 1 request / 6s without a key, faster with one.
+        self._delay = 0.7 if self.api_key else 6.0
+        self._last_request = 0.0  # timestamp, so we only wait *between* requests
         # Simple cache so the same service+version is not queried twice.
         self._cache = {}
         # CISA KEV: used to flag actively exploited CVEs.
@@ -19,14 +22,20 @@ class VulnChecker:
         # EPSS / PoC / ExploitDB enrichment.
         self.intel = ExploitIntel()
 
+    def _throttle(self):
+        """Wait only the time still needed since the previous request (no wait
+        before the very first one, so the first CVE lookup isn't delayed 6s)."""
+        wait = self._delay - (time.time() - self._last_request)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_request = time.time()
+
     def _request(self, params):
         """Rate-limit-friendly, retrying request to NVD."""
         headers = {"apiKey": self.api_key} if self.api_key else {}
-        # Without a key NVD recommends 1 request / 6s; with one we can go faster.
-        delay = 0.7 if self.api_key else 6.0
 
         for attempt in range(3):
-            time.sleep(delay)
+            self._throttle()
             try:
                 resp = requests.get(
                     self.base_url, params=params, headers=headers, timeout=15
@@ -38,7 +47,7 @@ class VulnChecker:
                 return resp.json()
             # 403/429 -> rate limit; back off and retry.
             if resp.status_code in (403, 429):
-                time.sleep(delay * (attempt + 2))
+                time.sleep(self._delay * (attempt + 2))
                 continue
             break
         return None
