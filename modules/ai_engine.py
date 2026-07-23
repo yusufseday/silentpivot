@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -136,6 +137,35 @@ class SilentAI:
         (WAF, rate-limits, or things likely to be false positives)
         """
         return self._complete(prompt)
+
+    def suggest_payloads(self, context, kind, n=12):
+        """Generate up to `n` target-tailored payloads for an active module (ssrf / lfi
+        / 403). AI only PROPOSES candidates; the calling module still tests each one and
+        confirms by evidence, so a bogus payload simply produces no finding."""
+        prompt = f"""You are a penetration tester generating test payloads for AUTHORIZED
+        testing. Target context (from recon):
+        {json.dumps(context, ensure_ascii=False)}
+
+        Generate up to {n} '{kind}' payloads tailored to this exact stack (OS, web server,
+        framework, cloud provider, WAF). Prefer variants the generic lists miss.
+        Return ONLY a JSON array of raw payload strings — no prose, no markdown."""
+        return self._parse_payload_list(self._complete(prompt), n)
+
+    @staticmethod
+    def _parse_payload_list(raw, cap):
+        """Safely pull a JSON string-array out of the model's reply."""
+        if not raw:
+            return []
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if not m:
+            return []
+        try:
+            arr = json.loads(m.group(0))
+        except ValueError:
+            return []
+        out = [x.strip() for x in arr
+               if isinstance(x, str) and x.strip() and len(x) < 300]
+        return out[:cap]
 
     def _complete(self, prompt):
         try:

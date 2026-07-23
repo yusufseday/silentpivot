@@ -142,6 +142,20 @@ def c_pathtraversal():
     return ok, f"passwd signature -> {hit[0] if hit else None}, clean page -> {clean}"
 
 
+def c_ssrf():
+    from modules.ssrf import SSRFScanner
+    hit = SSRFScanner._check("ami-id\ninstance-id\niam/security-credentials/")
+    clean = SSRFScanner._check("<html>welcome</html>")
+    ok = hit and hit[0] == "AWS metadata" and clean is None
+    return ok, f"AWS-metadata signature -> {hit[0] if hit else None}, clean -> {clean}"
+
+
+def c_ai_payload_parse():
+    from modules.ai_engine import SilentAI
+    got = SilentAI._parse_payload_list('text ["http://127.0.0.1/","gopher://x"] tail', 12)
+    return len(got) == 2, f"parsed {got} (bad input -> {SilentAI._parse_payload_list('none', 12)})"
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -156,6 +170,8 @@ def main():
     check("403 bypass techniques", c_bypass403)
     check("Leak/secret regex core", c_leakfinder)
     check("Path traversal signatures", c_pathtraversal)
+    check("SSRF signatures", c_ssrf)
+    check("AI payload JSON parse", c_ai_payload_parse)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)

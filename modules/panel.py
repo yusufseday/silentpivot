@@ -20,6 +20,7 @@ from modules.nuclei import NucleiScanner
 from modules.bypass403 import Bypass403
 from modules.leakfinder import LeakFinder
 from modules.pathtraversal import PathTraversal
+from modules.ssrf import SSRFScanner
 from modules.autopilot import run_autopilot
 from modules import reporter
 
@@ -69,6 +70,7 @@ class CommandCenter:
         "9": "tool_bypass403",
         "l": "tool_leak",
         "p": "tool_pathtraversal",
+        "s": "tool_ssrf",
         "0": "exit",
     }
 
@@ -90,6 +92,7 @@ class CommandCenter:
         t.add_row("9", "403 Bypass              [dim](forbidden-path bypass techniques)[/dim]")
         t.add_row("L", "Leak / Secret Finder    [dim](exposed keys, tokens, .git/.env)[/dim]")
         t.add_row("P", "Path Traversal / LFI    [dim](parameter file-read fuzzing)[/dim]")
+        t.add_row("S", "SSRF Scan               [dim](reflected SSRF + AI payloads)[/dim]")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,
@@ -601,6 +604,41 @@ class CommandCenter:
         ui.error(f"⚠ {len(hits)} confirmed file-read(s) — evidence found in the response.")
         for h in hits[:3]:
             console.print(f"    [dim]{h['param']}:[/dim] [green]{h['evidence']}[/green]")
+
+    def tool_ssrf(self):
+        console.print("[dim]Tip: include a URL-taking parameter, e.g. ?url=https://x[/dim]")
+        url = Prompt.ask("Target URL").strip()
+        if not url:
+            return
+
+        # AI-payload integration: use the last web fingerprint (stack/WAF) to have the
+        # AI propose target-tailored payloads. The engine still verifies every one.
+        extra = []
+        if Confirm.ask("Use AI to add stack-specific payloads?", default=False):
+            ctx = {"url": url,
+                   "web": [{k: w.get(k) for k in ("server", "tech", "waf")}
+                           for w in (self.last_web or [])]}
+            ui.info("Asking AI for target-tailored SSRF payloads...")
+            extra = SilentAI().suggest_payloads(ctx, "ssrf")
+            if extra:
+                ui.info(f"AI proposed {len(extra)} extra payload(s) — testing them too.")
+
+        ui.info(f"Scanning {url} for reflected SSRF ...")
+        result = SSRFScanner().run(url, extra_payloads=extra)
+        hits = result["hits"]
+        if not hits:
+            ui.success(f"No reflected SSRF found ({result['payloads_tried']} payloads). "
+                       f"[dim]Blind SSRF needs OOB — use [5] Nuclei.[/dim]")
+            return
+        t = Table(title=f"{result['url']} — SSRF Hits")
+        t.add_column("Param", style="cyan")
+        t.add_column("Signature", style="bold red")
+        t.add_column("Status", justify="right")
+        t.add_column("Evidence")
+        for h in hits:
+            t.add_row(h["param"], h["signature"], str(h["status"]), h["evidence"])
+        console.print(t)
+        ui.error(f"⚠ {len(hits)} SSRF hit(s) — internal/metadata content reflected!")
 
     def tool_reports(self):
         files = sorted(glob.glob(os.path.join("data", "*.md")) +
