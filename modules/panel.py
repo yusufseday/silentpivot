@@ -295,32 +295,49 @@ class CommandCenter:
         domain = Prompt.ask("Target domain (e.g. example.com)").strip()
         if not domain:
             return
+        active = Confirm.ask("Include active DNS brute-force? (deeper, slower)", default=True)
         scanner = SubdomainScanner()
-        tool = scanner.detect_tool()
-        engine = tool if tool else "passive OSINT (crt.sh, certspotter, OTX, ...)"
-        ui.info(f"Enumerating {domain} via {engine}...")
-        results = scanner.scan(domain, resolve=True)
+        engine = scanner.detect_tool() or "passive OSINT"
+        ui.info(f"Deep research on {domain}: passive ({engine}) + "
+                f"{'active brute + ' if active else ''}enrichment + takeover check...")
+        ui.info("This can take up to a minute...")
+        results = scanner.scan(domain, active=active)
         if not results:
             ui.warn("No subdomains found, or sources did not respond.")
             return
 
-        # Show which sources contributed (transparency + trust)
         st = scanner.stats
-        contrib = ", ".join(f"{k}:{v}" for k, v in st.get("sources", {}).items() if v)
-        ui.info(f"Engine: [bold]{st.get('method')}[/bold]  |  sources -> {contrib}")
+        contrib = ", ".join(f"{k}:{v}" for k, v in st.get("passive_sources", {}).items() if v)
+        ui.info(f"Engine: [bold]{st.get('method')}[/bold]  |  passive -> {contrib}  |  "
+                f"active brute -> {st.get('active_found')}"
+                + ("  [yellow](wildcard DNS)[/yellow]" if st.get("wildcard") else ""))
 
-        live = [r for r in results if r["live"]]
-        t = Table(title=f"{domain} — {len(results)} subdomains, {len(live)} live")
-        t.add_column("Subdomain", style="cyan")
+        resolved = [r for r in results if r["resolved"]]
+        t = Table(title=f"{domain} — {len(results)} subdomains, {len(resolved)} resolved")
+        t.add_column("Subdomain", style="cyan", no_wrap=False)
         t.add_column("IP")
-        t.add_column("State")
-        for r in results:
-            if r["live"]:
-                t.add_row(r["host"], r["ip"], "[green]LIVE[/green]")
-            else:
-                t.add_row(r["host"], "[dim]-[/dim]", "[dim]unresolved[/dim]")
+        t.add_column("HTTP", justify="right")
+        t.add_column("Origin")
+        t.add_column("Takeover")
+        # Show resolved ones (the actionable set); note the rest.
+        for r in resolved:
+            code = r.get("http_status")
+            http = f"{code}" if code else "[dim]-[/dim]"
+            origin = {"both": "[green]active+passive[/]", "active": "[yellow]active[/]",
+                      "passive": "[cyan]passive[/]"}.get(r["origin"], r["origin"])
+            takeover = f"[bold red]{r['takeover']}[/]" if r.get("takeover") else "[dim]-[/dim]"
+            t.add_row(r["host"], r["ip"], http, origin, takeover)
         console.print(t)
-        ui.success(f"{len(live)} live subdomains detected.")
+
+        unresolved = len(results) - len(resolved)
+        if unresolved:
+            console.print(f"[dim]+ {unresolved} subdomain(s) found but not currently resolving[/dim]")
+        takeovers = [r for r in results if r.get("takeover")]
+        if takeovers:
+            ui.error(f"⚠ {len(takeovers)} POTENTIAL SUBDOMAIN TAKEOVER(S):")
+            for r in takeovers:
+                console.print(f"    [bold red]{r['host']}[/] → {r['takeover']} (dangling)")
+        ui.success(f"{len(resolved)} resolved subdomains ({len(results)} total discovered).")
 
     def tool_portcheck(self):
         host = Prompt.ask("Target IP/host").strip()

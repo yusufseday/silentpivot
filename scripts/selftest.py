@@ -76,9 +76,9 @@ def c_nvd():
 def c_subdomain():
     from modules.subdomain import SubdomainScanner
     s = SubdomainScanner()
-    subs = s._gather("nmap.org")
-    live_sources = [k for k, v in s.stats["sources"].items() if v > 0]
-    return (len(subs) > 0), f"{len(subs)} subdomains | working sources: {live_sources}"
+    sub_sources = s._gather_passive("nmap.org")
+    working = [k for k, v in s._passive_counts.items() if v > 0]
+    return (len(sub_sources) > 0), f"{len(sub_sources)} subs (passive) | working sources: {working}"
 
 
 def c_portcheck():
