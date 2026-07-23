@@ -17,6 +17,8 @@ from modules.subdomain import SubdomainScanner
 from modules.portcheck import PortChecker
 from modules.webprobe import WebProber, WEB_PORTS
 from modules.nuclei import NucleiScanner
+from modules.bypass403 import Bypass403
+from modules.leakfinder import LeakFinder
 from modules.autopilot import run_autopilot
 from modules import reporter
 
@@ -63,6 +65,8 @@ class CommandCenter:
         "6": "tool_vuln",
         "7": "tool_ai_report",
         "8": "tool_reports",
+        "9": "tool_bypass403",
+        "l": "tool_leak",
         "0": "exit",
     }
 
@@ -81,6 +85,8 @@ class CommandCenter:
         t.add_row("6", "CVE + KEV Vuln Analysis [dim](on the last scan)[/dim]")
         t.add_row("7", "Generate AI Report      [dim](on the last scan)[/dim]")
         t.add_row("8", "Saved Reports")
+        t.add_row("9", "403 Bypass              [dim](forbidden-path bypass techniques)[/dim]")
+        t.add_row("L", "Leak / Secret Finder    [dim](exposed keys, tokens, .git/.env)[/dim]")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,
@@ -478,6 +484,76 @@ class CommandCenter:
         )
         path = reporter.save_report(report, fmt=fmt)
         ui.success(f"Report saved: {path}")
+
+    def tool_bypass403(self):
+        url = Prompt.ask("Forbidden URL (e.g. https://host/admin)").strip()
+        if not url:
+            return
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        ui.info(f"Trying 403/401 bypass techniques on {url} ...")
+        result = Bypass403().run(url)
+        if result["baseline"] is None:
+            ui.error("Could not reach the URL.")
+            return
+        if not result["applicable"]:
+            ui.warn(f"URL returned {result['baseline']} (not 401/403) — nothing to bypass.")
+            return
+        hits = result["hits"]
+        if not hits:
+            ui.success(f"Baseline {result['baseline']} — no bypass found "
+                       f"(access control looks solid).")
+            return
+        t = Table(title=f"{url} — Bypass Hits (baseline {result['baseline']})")
+        t.add_column("Status", justify="right")
+        t.add_column("Technique", style="cyan")
+        t.add_column("Method")
+        t.add_column("Length", justify="right")
+        for h in hits:
+            code_style = "green" if h["status"] < 300 else "yellow"
+            t.add_row(f"[{code_style}]{h['status']}[/]", h["technique"],
+                      h["method"], str(h["length"]))
+        console.print(t)
+        ui.warn(f"{len(hits)} potential bypass(es) — verify manually (a 200 can still "
+                f"be a login/redirect page).")
+
+    def tool_leak(self):
+        default = self.last_target or ""
+        url = Prompt.ask("Target URL/host", default=default).strip()
+        if not url:
+            return
+        ui.info(f"Hunting for secrets and exposed files on {url} ...")
+        result = LeakFinder().run(url)
+        secrets, exposed = result["secrets"], result["exposed"]
+
+        if secrets:
+            t = Table(title=f"Exposed Secrets ({len(secrets)})")
+            t.add_column("Type", style="cyan")
+            t.add_column("Value")
+            t.add_column("Confidence")
+            t.add_column("Source")
+            conf_color = {"high": "bold red", "medium": "yellow", "low": "dim"}
+            for s in secrets:
+                t.add_row(s["type"], s["value"],
+                          f"[{conf_color.get(s['confidence'], 'dim')}]{s['confidence']}[/]",
+                          s["source"])
+            console.print(t)
+
+        if exposed:
+            t = Table(title=f"Exposed Files ({len(exposed)})")
+            t.add_column("Path", style="cyan")
+            t.add_column("Size", justify="right")
+            t.add_column("Confidence")
+            for e in exposed:
+                cc = "bold red" if e["confidence"] == "high" else "yellow"
+                t.add_row(e["path"], str(e["size"]), f"[{cc}]{e['confidence']}[/]")
+            console.print(t)
+
+        if not secrets and not exposed:
+            ui.success("No exposed secrets or sensitive files found.")
+        else:
+            ui.warn(f"{len(secrets)} secret(s), {len(exposed)} exposed file(s) — "
+                    f"verify (low-confidence hits may be false positives).")
 
     def tool_reports(self):
         files = sorted(glob.glob(os.path.join("data", "*.md")) +

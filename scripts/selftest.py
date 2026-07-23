@@ -112,6 +112,27 @@ def c_nuclei():
     return ok, f"JSONL parse OK | nuclei binary: {avail}"
 
 
+def c_bypass403():
+    from modules.bypass403 import Bypass403
+    attempts = Bypass403()._build_attempts("https://host/admin")
+    techniques = {a[0].split()[0] for a in attempts}  # header / path / method
+    ok = len(attempts) > 20 and {"header", "path", "method"} <= techniques
+    return ok, f"{len(attempts)} bypass techniques generated ({', '.join(sorted(techniques))})"
+
+
+def c_leakfinder():
+    from modules.leakfinder import _COMPILED, _PLACEHOLDER
+    sample = 'a="AKIAIOSFODNN7EXAMPLE" b="AKIA1234567890ABCDEF" c="ghp_' + "z" * 36 + '"'
+    hits = []
+    for name, (pat, _c) in _COMPILED.items():
+        for m in pat.finditer(sample):
+            if not _PLACEHOLDER.search(m.group(0)):
+                hits.append(name)
+    # must catch the real AWS + GitHub token, skip the EXAMPLE placeholder
+    ok = "AWS Access Key" in hits and "GitHub Token" in hits and len(hits) == 2
+    return ok, f"caught {hits} (placeholder skipped)"
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -123,6 +144,8 @@ def main():
     check("Native port check", c_portcheck)
     check("Web probe & fingerprint", c_webprobe)
     check("Nuclei wrapper (parse)", c_nuclei)
+    check("403 bypass techniques", c_bypass403)
+    check("Leak/secret regex core", c_leakfinder)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)
