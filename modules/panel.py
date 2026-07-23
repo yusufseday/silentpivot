@@ -157,7 +157,7 @@ class CommandCenter:
 
         fmt = Prompt.ask("Save report format", choices=["md", "json", "html"], default="md")
         path = reporter.save_report(report, fmt=fmt)
-        ui.success(f"Unified report saved: {path}")
+        ui.success(f"Unified report saved: {ui.file_link(path)}")
 
     def tool_nmap(self):
         target = Prompt.ask("Target IP/domain").strip()
@@ -471,15 +471,20 @@ class CommandCenter:
                 sev = c.get("severity", "UNKNOWN")
                 epss = c.get("epss")
                 epss_str = f"{epss * 100:.1f}%" if isinstance(epss, (int, float)) else "[dim]-[/dim]"
-                # Exploit availability: ExploitDB > public PoC > none
+                # Exploit availability (clickable): ExploitDB > public PoC > none
                 if c.get("exploitdb"):
-                    exp = f"[bold red]EDB:{','.join(map(str, c['exploitdb'][:2]))}[/]"
+                    edb = c["exploitdb"][0]
+                    ids = ",".join(map(str, c["exploitdb"][:2]))
+                    exp = (f"[link=https://www.exploit-db.com/exploits/{edb}]"
+                           f"[bold red]EDB:{ids}[/][/link]")
                 elif c.get("poc"):
-                    exp = f"[yellow]PoC x{c.get('poc_count')}[/]"
+                    url = (c.get("poc_urls") or [None])[0]
+                    label = f"[yellow]PoC x{c.get('poc_count')}[/]"
+                    exp = f"[link={url}]{label}[/link]" if url else label
                 else:
                     exp = "[dim]-[/dim]"
                 t.add_row(
-                    str(r["port"]), r["service"], c["id"],
+                    str(r["port"]), r["service"], ui.cve_link(c["id"]),
                     f"[{ui.SEVERITY_COLORS.get(sev, 'dim')}]{c.get('cvss')} {sev}[/]",
                     epss_str,
                     "[bold red]ACTIVE[/]" if c.get("kev") else "[dim]-[/dim]",
@@ -507,7 +512,7 @@ class CommandCenter:
             self.last_results, analysis, scan_meta=self.last_scan_meta,
         )
         path = reporter.save_report(report, fmt=fmt)
-        ui.success(f"Report saved: {path}")
+        ui.success(f"Report saved: {ui.file_link(path)}")
 
     def tool_bypass403(self):
         url = ui.normalize_url(Prompt.ask("Forbidden URL (e.g. https://host/admin)"))
@@ -664,12 +669,29 @@ class CommandCenter:
         for i, f in enumerate(files[:20], 1):
             t.add_row(str(i), os.path.basename(f), f"{os.path.getsize(f)} B")
         console.print(t)
-        sel = Prompt.ask("View # (blank to skip)", default="").strip()
+        console.print("[dim]Enter a # to view, or e<#> to export (e.g. 'e2') to HTML/MD[/dim]")
+        sel = Prompt.ask("View / export # (blank to skip)", default="").strip().lower()
+
+        # Export: re-render a saved report to another format from its JSON — no re-scan.
+        if sel.startswith("e") and sel[1:].isdigit():
+            idx = int(sel[1:])
+            if not (1 <= idx <= len(files)):
+                return
+            base = os.path.splitext(files[idx - 1])[0]
+            json_path = base + ".json"
+            if not os.path.exists(json_path):
+                ui.warn("No JSON data for this report — can't re-export (re-run the scan).")
+                return
+            fmt = Prompt.ask("Export to", choices=["html", "md"], default="html")
+            new_path = reporter.export_saved(json_path, fmt)
+            ui.success(f"Exported: {ui.file_link(new_path)}")
+            return
+
         if sel.isdigit() and 1 <= int(sel) <= len(files):
             path = files[int(sel) - 1]
             if path.endswith(".html"):
                 # Raw HTML in a terminal is noise; point to the browser instead.
-                ui.info(f"Open in a browser: [cyan]{path}[/cyan]  "
+                ui.info(f"Open in a browser: {ui.file_link(path)}  "
                         f"[dim](e.g. xdg-open / firefox {path})[/dim]")
             else:
                 with open(path, encoding="utf-8") as fh:

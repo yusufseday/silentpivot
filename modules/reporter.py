@@ -311,12 +311,16 @@ def to_html(report):
         cves = r.get("cves") or []
         worst = _worst_cve(cves)
         if worst:
-            risk = f'{_sev_badge(worst.get("severity"))} {esc(str(worst.get("cvss")))}'
+            cid = worst.get("id", "")
+            cve_a = (f'<a href="https://nvd.nist.gov/vuln/detail/{esc(cid)}" '
+                     f'target="_blank">{esc(cid)}</a>') if cid else ""
+            risk = f'{_sev_badge(worst.get("severity"))} {esc(str(worst.get("cvss")))} {cve_a}'
             epss = worst.get("epss")
             epss_s = f"{epss * 100:.1f}%" if isinstance(epss, (int, float)) else "—"
             kev = '<span class="kev">YES</span>' if any(c.get("kev") for c in cves) else "—"
-            if any(c.get("exploitdb") for c in cves):
-                exp = "ExploitDB"
+            edb = next((c["exploitdb"][0] for c in cves if c.get("exploitdb")), None)
+            if edb:
+                exp = f'<a href="https://www.exploit-db.com/exploits/{esc(str(edb))}" target="_blank">ExploitDB</a>'
             elif any(c.get("poc") for c in cves):
                 exp = "PoC"
             else:
@@ -403,4 +407,23 @@ def save_report(report, fmt="md", output_path=None, out_dir="data"):
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
+
+    # Always keep a JSON sidecar (the canonical structured data) so the report can be
+    # re-exported to any format later without re-running the whole scan.
+    if fmt != "json":
+        try:
+            sidecar = os.path.splitext(output_path)[0] + ".json"
+            with open(sidecar, "w", encoding="utf-8") as f:
+                f.write(to_json(report))
+        except OSError:
+            pass
     return output_path
+
+
+def export_saved(json_path, fmt):
+    """Re-render a previously-saved report (from its JSON) into another format —
+    no re-scan needed. Returns the new file path."""
+    with open(json_path, encoding="utf-8") as f:
+        report = json.load(f)
+    return save_report(report, fmt=fmt,
+                       output_path=os.path.splitext(json_path)[0] + f".{fmt}")

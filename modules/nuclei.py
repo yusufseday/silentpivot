@@ -75,8 +75,9 @@ class NucleiScanner:
 
     @staticmethod
     def parse_jsonl(text):
-        """Parse nuclei JSONL (one JSON object per line) into structured findings."""
-        findings = []
+        """Parse nuclei JSONL (one JSON object per line) into structured findings,
+        deduplicated so the same template+location doesn't spam identical rows."""
+        findings, seen = [], set()
         for line in (text or "").splitlines():
             line = line.strip()
             if not line.startswith("{"):
@@ -86,15 +87,25 @@ class NucleiScanner:
             except ValueError:
                 continue
             info = obj.get("info", {}) or {}
+            # matcher-name / extracted-results say WHICH thing matched (e.g. which weak
+            # credential or missing header) — turns duplicate-looking rows into signal.
+            extracted = obj.get("extracted-results") or []
+            detail = obj.get("matcher-name", "") or ", ".join(map(str, extracted))
+            matched_at = obj.get("matched-at") or obj.get("matched", "")
+            template_id = obj.get("template-id") or obj.get("templateID", "")
+
+            key = (template_id, matched_at, detail)
+            if key in seen:  # collapse truly identical hits
+                continue
+            seen.add(key)
+
             findings.append({
-                "template_id": obj.get("template-id") or obj.get("templateID", ""),
+                "template_id": template_id,
                 "name": info.get("name", ""),
-                # matcher-name distinguishes multiple hits of one template (e.g. which
-                # security header is missing), turning duplicate-looking rows into signal.
-                "matcher_name": obj.get("matcher-name", ""),
+                "matcher_name": detail,
                 "severity": (info.get("severity") or "unknown").upper(),
                 "tags": info.get("tags") or [],
-                "matched_at": obj.get("matched-at") or obj.get("matched", ""),
+                "matched_at": matched_at,
                 "host": obj.get("host", ""),
                 "type": obj.get("type", ""),
                 "description": (info.get("description") or "").strip(),

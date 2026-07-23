@@ -81,7 +81,7 @@ def run_cli(args):
     )
     if not args.no_save:
         path = reporter.save_report(report, fmt=args.format, output_path=args.output)
-        ui.success(f"Report saved: {path}")
+        ui.success(f"Report saved: {ui.file_link(path)}")
 
 
 def run_autopilot_cli(args):
@@ -115,7 +115,7 @@ def run_autopilot_cli(args):
 
     if not args.no_save:
         path = reporter.save_report(report, fmt=args.format, output_path=args.output)
-        ui.success(f"Unified report saved: {path}")
+        ui.success(f"Unified report saved: {ui.file_link(path)}")
 
 
 def main():

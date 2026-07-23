@@ -1,5 +1,6 @@
 """Shared UI layer: a single Console instance, colors and common output helpers.
 Both the CLI and the interactive panel are fed from here (no duplicated code)."""
+import os
 import sys
 from urllib.parse import urlparse
 
@@ -75,6 +76,18 @@ def print_summary_table(results, title="Scan Summary"):
             kev,
         )
     console.print(table)
+
+
+def file_link(path):
+    """rich markup that turns a local file path into a clickable file:// hyperlink
+    (modern terminals open it; others just show the path)."""
+    abs_path = os.path.abspath(path).replace("\\", "/")
+    return f"[link=file:///{abs_path.lstrip('/')}]{path}[/link]"
+
+
+def cve_link(cve_id):
+    """rich clickable link from a CVE id to its NVD detail page."""
+    return f"[link=https://nvd.nist.gov/vuln/detail/{cve_id}]{cve_id}[/link]"
 
 
 def normalize_url(raw):
