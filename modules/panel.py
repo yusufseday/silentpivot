@@ -53,7 +53,8 @@ class CommandCenter:
             except KeyboardInterrupt:
                 ui.warn("Cancelled, returning to menu.")
             except Exception as e:
-                ui.error(f"Unexpected error: {e}")
+                ui.error(f"Something went wrong: {e}")
+                console.print("[dim]    (returning to the menu — nothing was saved)[/dim]")
             console.print()
 
     MENU = {
@@ -509,11 +510,10 @@ class CommandCenter:
         ui.success(f"Report saved: {path}")
 
     def tool_bypass403(self):
-        url = Prompt.ask("Forbidden URL (e.g. https://host/admin)").strip()
+        url = ui.normalize_url(Prompt.ask("Forbidden URL (e.g. https://host/admin)"))
         if not url:
+            ui.error("Invalid URL — enter something like http://host/admin")
             return
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
         extra = self._ai_payloads("403 bypass path variants")
         ui.info(f"Trying 403/401 bypass techniques on {url} ...")
         result = Bypass403().run(url, extra_payloads=extra)
@@ -543,8 +543,9 @@ class CommandCenter:
 
     def tool_leak(self):
         default = self.last_target or ""
-        url = Prompt.ask("Target URL/host", default=default).strip()
+        url = ui.normalize_url(Prompt.ask("Target URL/host", default=default))
         if not url:
+            ui.error("Invalid URL — enter something like http://host")
             return
         ui.info(f"Hunting for secrets and exposed files on {url} ...")
         result = LeakFinder().run(url)
@@ -581,8 +582,9 @@ class CommandCenter:
 
     def tool_pathtraversal(self):
         console.print("[dim]Tip: include a parameter, e.g. https://host/view.php?file=welcome[/dim]")
-        url = Prompt.ask("Target URL").strip()
+        url = ui.normalize_url(Prompt.ask("Target URL"))
         if not url:
+            ui.error("Invalid URL — enter something like http://host/path?param=x")
             return
         extra = self._ai_payloads("path traversal / LFI")
         ui.info(f"Fuzzing {url} for path traversal / LFI ...")
@@ -625,8 +627,9 @@ class CommandCenter:
 
     def tool_ssrf(self):
         console.print("[dim]Tip: include a URL-taking parameter, e.g. ?url=https://x[/dim]")
-        url = Prompt.ask("Target URL").strip()
+        url = ui.normalize_url(Prompt.ask("Target URL"))
         if not url:
+            ui.error("Invalid URL — enter something like http://host/path?param=x")
             return
         extra = self._ai_payloads("ssrf")
         ui.info(f"Scanning {url} for reflected SSRF ...")

@@ -88,15 +88,20 @@ class VulnChecker:
         for result in scan_results:
             cpe = result.get("cpe", "")
             service = result.get("service", "")
+            product = result.get("product", "")
             version = result.get("version", "")
 
+            # Prefer nmap's product name ("vsftpd") over the generic service ("ftp")
+            # for keyword search — far more accurate (e.g. finds the vsftpd 2.3.4 backdoor).
+            name = product if product and product != "unknown" else service
+
             # 1) Query by CPE first (most accurate method).
-            # 2) If no CPE, fall back to service+version keyword search.
+            # 2) If no CPE, fall back to product/service + version keyword search.
             if cpe:
                 cache_key = cpe
                 params = {"cpeName": self._normalize_cpe(cpe), "resultsPerPage": 3}
             elif version and version != "unknown":
-                cache_key = f"{service} {version}"
+                cache_key = f"{name} {version}"
                 params = {"keywordSearch": cache_key, "resultsPerPage": 3}
             else:
                 result["cve_data"] = "Version/CPE unknown, vulnerability scan skipped."

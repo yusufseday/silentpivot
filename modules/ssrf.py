@@ -40,12 +40,16 @@ SSRF_PAYLOADS = [
     "http://2130706433/",       # 127.0.0.1 as a decimal integer (filter bypass)
 ]
 
-# Evidence signatures — a match is proof of reflected SSRF, not a guess.
+# Evidence signatures — tokens that appear ONLY in a real metadata RESPONSE body,
+# never in the request payloads (so a reflected payload can't false-trigger them).
+# We deliberately avoid substrings of our own payloads (e.g. "iam/", "instance-id",
+# "computeMetadata/v1") which reflecting parameters (LFI, error echoes) would match.
 SSRF_SIGNATURES = [
-    ("AWS metadata", re.compile(r"ami-id|instance-id|iam/|security-credentials|"
-                                r"placement/|instance-identity|accessKeyId")),
-    ("Azure metadata", re.compile(r'azEnvironment|"vmId"|"compute"\s*:|"osType"')),
-    ("GCP metadata", re.compile(r"computeMetadata|/computeMetadata/v1|numeric-project-id")),
+    ("AWS metadata", re.compile(r'ami-launch-index|block-device-mapping|reservation-id|'
+                                r'"AccessKeyId"|"SecretAccessKey"|"accountId"|"privateIp"|'
+                                r'"availabilityZone"|instanceProfileArn')),
+    ("Azure metadata", re.compile(r'azEnvironment|"vmId"|"osType"|"resourceGroupName"|'
+                                  r'"subscriptionId"')),
 ]
 
 
@@ -71,10 +75,12 @@ class SSRFScanner:
         return urlunparse(p._replace(query="&".join(out)))
 
     @staticmethod
-    def _check(body):
+    def _check(body, payload=""):
         for name, rx in SSRF_SIGNATURES:
             m = rx.search(body or "")
-            if m:
+            # Reflection guard: if the matched token is part of the payload we sent,
+            # it's just our request echoed back — not real metadata content.
+            if m and m.group(0).lower() not in (payload or "").lower():
                 return name, m.group(0)[:80]
         return None
 
@@ -86,7 +92,7 @@ class SSRFScanner:
                                  allow_redirects=False)
         except requests.RequestException:
             return None
-        hit = self._check(r.text)
+        hit = self._check(r.text, payload)
         if hit:
             name, evidence = hit
             return {"param": param, "payload": payload, "signature": name,

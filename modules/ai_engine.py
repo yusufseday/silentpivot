@@ -176,4 +176,6 @@ class SilentAI:
             )
             return response.choices[0].message.content
         except Exception as e:
-            return f"An error occurred during AI analysis: {str(e)}"
+            return (f"AI analysis is unavailable right now: {e}\n\n"
+                    f"Check AI_API_KEY / AI_BASE_URL / AI_MODEL in your .env "
+                    f"(the rest of the scan data above is still valid).")

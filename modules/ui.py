@@ -1,6 +1,7 @@
 """Shared UI layer: a single Console instance, colors and common output helpers.
 Both the CLI and the interactive panel are fed from here (no duplicated code)."""
 import sys
+from urllib.parse import urlparse
 
 from rich.console import Console
 from rich.table import Table
@@ -13,7 +14,9 @@ try:
 except Exception:
     pass
 
-console = Console()
+# emoji=False so ':word:' patterns in scanned content (e.g. the "root:x:0:0:" line of
+# /etc/passwd) aren't mangled into emojis by rich's shortcode replacement.
+console = Console(emoji=False)
 
 # CVSS severity -> rich style
 SEVERITY_COLORS = {
@@ -72,6 +75,22 @@ def print_summary_table(results, title="Scan Summary"):
             kev,
         )
     console.print(table)
+
+
+def normalize_url(raw):
+    """Validate + normalize a user-entered URL. Returns a clean URL or None.
+    Guards against malformed input (spaces, stray '[', missing host) that would
+    otherwise throw a cryptic error deep inside urlparse."""
+    raw = (raw or "").strip()
+    if not raw or " " in raw or "[" in raw:
+        return None
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return None
+    return raw if parsed.netloc else None
 
 
 def info(msg):

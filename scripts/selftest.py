@@ -144,10 +144,14 @@ def c_pathtraversal():
 
 def c_ssrf():
     from modules.ssrf import SSRFScanner
-    hit = SSRFScanner._check("ami-id\ninstance-id\niam/security-credentials/")
-    clean = SSRFScanner._check("<html>welcome</html>")
-    ok = hit and hit[0] == "AWS metadata" and clean is None
-    return ok, f"AWS-metadata signature -> {hit[0] if hit else None}, clean -> {clean}"
+    # Real AWS metadata response tokens (not present in the payloads)
+    real = SSRFScanner._check('{"AccessKeyId":"AKIA...","SecretAccessKey":"x"}', "http://169.254.169.254/")
+    # Reflected payload must NOT trigger (the guard): body echoes the payload path
+    reflected = SSRFScanner._check("Warning: include(http://169.254.169.254/latest/meta-data/iam/)",
+                                   "http://169.254.169.254/latest/meta-data/iam/")
+    clean = SSRFScanner._check("<html>welcome</html>", "x")
+    ok = real and real[0] == "AWS metadata" and reflected is None and clean is None
+    return ok, f"real->{real[0] if real else None}, reflected->{reflected}, clean->{clean}"
 
 
 def c_ai_payload_parse():
