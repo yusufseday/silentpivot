@@ -264,6 +264,14 @@ def _md_to_html(md):
     return "\n".join(out)
 
 
+def _html_a(url, label=None):
+    """Real clickable anchor for http(s) URLs; plain escaped text otherwise."""
+    text = html.escape(str(label if label is not None else url))
+    if isinstance(url, str) and url.startswith(("http://", "https://")):
+        return f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener">{text}</a>'
+    return text
+
+
 def _html_table(headers, rows):
     head = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
     body = ""
@@ -336,7 +344,7 @@ def to_html(report):
     # Web table
     web_html = ""
     if web:
-        wrows = [[f'<span class="mono">{esc(w["url"])}</span>', esc(str(w.get("status"))),
+        wrows = [[f'<span class="mono">{_html_a(w["url"])}</span>', esc(str(w.get("status"))),
                   esc(w.get("server") or "—"), esc(", ".join(w.get("tech") or []) or "—"),
                   esc(", ".join(w.get("waf") or []) or "—")] for w in web]
         web_html = ('<h2 class="sec">Web Fingerprint</h2>'
@@ -347,7 +355,7 @@ def to_html(report):
     if nuclei:
         nrows = [[_sev_badge(f.get("severity")), f'<span class="mono">{esc(f.get("template_id") or "")}</span>',
                   esc(f.get("name") or "—"), esc(f.get("matcher_name") or "—"),
-                  f'<span class="mono">{esc(f.get("matched_at") or "—")}</span>'] for f in nuclei]
+                  f'<span class="mono">{_html_a(f.get("matched_at") or "—")}</span>'] for f in nuclei]
         nuclei_html = (f'<h2 class="sec">Nuclei Findings ({len(nuclei)})</h2>'
                        + _html_table(["Severity", "Template", "Name", "Detail", "Matched At"], nrows))
 

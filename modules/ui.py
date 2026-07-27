@@ -79,10 +79,11 @@ def print_summary_table(results, title="Scan Summary"):
 
 
 def file_link(path):
-    """rich markup that turns a local file path into a clickable file:// hyperlink
-    (modern terminals open it; others just show the path)."""
+    """rich markup for a local file. Shows the ABSOLUTE path as the visible text so it
+    is copy/paste-ready (and auto-detected) even in terminals without OSC-8 support,
+    while still being a real file:// hyperlink in terminals that do support it."""
     abs_path = os.path.abspath(path).replace("\\", "/")
-    return f"[link=file:///{abs_path.lstrip('/')}]{path}[/link]"
+    return f"[link=file:///{abs_path.lstrip('/')}]{abs_path}[/link]"
 
 
 def cve_link(cve_id):

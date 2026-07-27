@@ -342,10 +342,10 @@ class CommandCenter:
             origin = {"both": "[green]active+passive[/]", "active": "[yellow]active[/]",
                       "passive": "[cyan]passive[/]"}.get(r["origin"], r["origin"])
             takeover = f"[bold red]{r['takeover']}[/]" if r.get("takeover") else "[dim]-[/dim]"
-            # Link to the scheme that actually answered; fall back to https:// so every
-            # host stays clickable even when nothing responded.
-            host_cell = f"[link={r.get('url') or 'https://' + r['host']}]{r['host']}[/link]"
-            t.add_row(host_cell, ip, http, origin, takeover)
+            # Show the full URL as the visible text: terminals that support OSC-8 get a
+            # real hyperlink, and the ones that don't still auto-detect the plain URL.
+            url = r.get("url") or "https://" + r["host"]
+            t.add_row(f"[link={url}]{url}[/link]", ip, http, origin, takeover)
         console.print(t)
         takeovers = [r for r in results if r.get("takeover")]
         if takeovers:
