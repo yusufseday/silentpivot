@@ -326,19 +326,23 @@ class CommandCenter:
         t.add_column("HTTP", justify="right")
         t.add_column("Origin")
         t.add_column("Takeover")
-        # Show resolved ones (the actionable set); note the rest.
-        for r in resolved:
+        # Show every discovered subdomain (resolved first); unresolved ones are still
+        # useful intel (old/internal names), so they are listed rather than hidden.
+        for r in results:
             code = r.get("http_status")
-            http = f"{code}" if code else "[dim]-[/dim]"
+            if code:
+                style = "green" if code < 400 else ("yellow" if code < 500 else "red")
+                http = f"[{style}]{code}[/]"
+            elif r["resolved"]:
+                http = "[dim]no HTTP[/dim]"
+            else:
+                http = "[dim]-[/dim]"
+            ip = r["ip"] if r["resolved"] else "[dim]unresolved[/dim]"
             origin = {"both": "[green]active+passive[/]", "active": "[yellow]active[/]",
                       "passive": "[cyan]passive[/]"}.get(r["origin"], r["origin"])
             takeover = f"[bold red]{r['takeover']}[/]" if r.get("takeover") else "[dim]-[/dim]"
-            t.add_row(r["host"], r["ip"], http, origin, takeover)
+            t.add_row(r["host"], ip, http, origin, takeover)
         console.print(t)
-
-        unresolved = len(results) - len(resolved)
-        if unresolved:
-            console.print(f"[dim]+ {unresolved} subdomain(s) found but not currently resolving[/dim]")
         takeovers = [r for r in results if r.get("takeover")]
         if takeovers:
             ui.error(f"⚠ {len(takeovers)} POTENTIAL SUBDOMAIN TAKEOVER(S):")

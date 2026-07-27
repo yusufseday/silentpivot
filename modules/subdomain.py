@@ -100,9 +100,10 @@ class SubdomainScanner:
         def one(item):
             host, meta = item
             _, ip = self._resolve(host)
-            status, takeover = (None, None)
-            if ip:
-                status, takeover = self._http_probe(host)
+            # Probe HTTP even when the A-record lookup failed: CDN/IPv6-only hosts can
+            # still answer over HTTP. Unresolved hosts get a short timeout so a long
+            # list of dead names doesn't slow the scan down.
+            status, takeover = self._http_probe(host, timeout=None if ip else 3)
             origin = meta["origin"]
             origin_str = "both" if origin == {"passive", "active"} else next(iter(origin))
             return {
@@ -115,13 +116,17 @@ class SubdomainScanner:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             for r in ex.map(one, list(merged.items())):
                 results.append(r)
-        # resolved first, then alphabetical
-        return sorted(results, key=lambda r: (not r["resolved"], r["host"]))
+        # Most actionable first: takeover candidates, then live HTTP, then resolved,
+        # then the rest — alphabetical within each group.
+        return sorted(results, key=lambda r: (
+            not r.get("takeover"), r.get("http_status") is None, not r["resolved"], r["host"]
+        ))
 
-    def _http_probe(self, host):
+    def _http_probe(self, host, timeout=None):
         for scheme in ("https", "http"):
             try:
-                r = self.session.get(f"{scheme}://{host}", timeout=self.http_timeout,
+                r = self.session.get(f"{scheme}://{host}",
+                                     timeout=timeout or self.http_timeout,
                                      verify=False, allow_redirects=True)
                 return r.status_code, self._match_takeover(r.text[:8000])
             except requests.RequestException:
