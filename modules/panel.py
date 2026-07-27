@@ -218,8 +218,9 @@ class CommandCenter:
             code = r.get("status", 0)
             code_style = "green" if code < 400 else ("yellow" if code < 500 else "red")
             waf = r.get("waf") or []
+            url = r.get("url", "")
             t.add_row(
-                r.get("url", "-"),
+                f"[link={url}]{url}[/link]" if url else "-",
                 f"[{code_style}]{code}[/]",
                 r.get("title") or "[dim]-[/dim]",
                 r.get("server") or "[dim]-[/dim]",
@@ -341,13 +342,18 @@ class CommandCenter:
             origin = {"both": "[green]active+passive[/]", "active": "[yellow]active[/]",
                       "passive": "[cyan]passive[/]"}.get(r["origin"], r["origin"])
             takeover = f"[bold red]{r['takeover']}[/]" if r.get("takeover") else "[dim]-[/dim]"
-            t.add_row(r["host"], ip, http, origin, takeover)
+            # Link to the scheme that actually answered; fall back to https:// so every
+            # host stays clickable even when nothing responded.
+            host_cell = f"[link={r.get('url') or 'https://' + r['host']}]{r['host']}[/link]"
+            t.add_row(host_cell, ip, http, origin, takeover)
         console.print(t)
         takeovers = [r for r in results if r.get("takeover")]
         if takeovers:
             ui.error(f"⚠ {len(takeovers)} POTENTIAL SUBDOMAIN TAKEOVER(S):")
             for r in takeovers:
-                console.print(f"    [bold red]{r['host']}[/] → {r['takeover']} (dangling)")
+                link = r.get("url") or "https://" + r["host"]
+                console.print(f"    [link={link}][bold red]{r['host']}[/][/link] "
+                              f"→ {r['takeover']} (dangling)")
         ui.success(f"{len(resolved)} resolved subdomains ({len(results)} total discovered).")
 
     def tool_portcheck(self):

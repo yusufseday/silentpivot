@@ -103,12 +103,12 @@ class SubdomainScanner:
             # Probe HTTP even when the A-record lookup failed: CDN/IPv6-only hosts can
             # still answer over HTTP. Unresolved hosts get a short timeout so a long
             # list of dead names doesn't slow the scan down.
-            status, takeover = self._http_probe(host, timeout=None if ip else 3)
+            status, takeover, url = self._http_probe(host, timeout=None if ip else 3)
             origin = meta["origin"]
             origin_str = "both" if origin == {"passive", "active"} else next(iter(origin))
             return {
                 "host": host, "ip": ip, "resolved": ip is not None,
-                "http_status": status, "takeover": takeover,
+                "http_status": status, "takeover": takeover, "url": url,
                 "origin": origin_str, "sources": sorted(meta["sources"]),
             }
 
@@ -123,15 +123,17 @@ class SubdomainScanner:
         ))
 
     def _http_probe(self, host, timeout=None):
+        """Returns (status, takeover, url) — url is the scheme that actually answered,
+        so the UI can link to a URL that really works."""
         for scheme in ("https", "http"):
+            url = f"{scheme}://{host}"
             try:
-                r = self.session.get(f"{scheme}://{host}",
-                                     timeout=timeout or self.http_timeout,
+                r = self.session.get(url, timeout=timeout or self.http_timeout,
                                      verify=False, allow_redirects=True)
-                return r.status_code, self._match_takeover(r.text[:8000])
+                return r.status_code, self._match_takeover(r.text[:8000]), url
             except requests.RequestException:
                 continue
-        return None, None
+        return None, None, None
 
     @staticmethod
     def _match_takeover(body):
