@@ -106,12 +106,19 @@ class SilentAI:
         """
         return self._complete(prompt)
 
-    def copilot(self, findings=None, web=None, nuclei=None, scan_meta=None, target=None):
+    def copilot(self, findings=None, web=None, nuclei=None, scan_meta=None, target=None,
+                extra=None):
         """Advisory 'what should I do next?' — reads the current recon state and
-        recommends prioritized, concrete next actions (tools/commands/endpoints/CVEs)."""
+        recommends prioritized, concrete next actions (tools/commands/endpoints/CVEs).
+        `extra` carries results from any other tool (subdomains, ports, leaks, confirmed
+        vulns) so the co-pilot works after ANY operation, not just nmap."""
         context = self._build_context(findings or [], web or [], nuclei or [])
         context["target"] = target
         context["waf"] = (scan_meta or {}).get("waf")
+        if extra:
+            context.update(extra)
+        # Drop empty sections so the prompt stays focused on what we actually have.
+        context = {k: v for k, v in context.items() if v}
 
         prompt = f"""
         You are a Senior Penetration Tester acting as a hands-on co-pilot. Given the

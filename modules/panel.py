@@ -34,6 +34,11 @@ class CommandCenter:
         self.last_nuclei = None   # last nuclei findings
         self.last_web = []        # last web-probe fingerprints
         self.last_scan_meta = {}  # multi-IP / protected-target context
+        # Extra recon state so the co-pilot can reason after ANY tool, not just nmap.
+        self.last_subdomains = []
+        self.last_ports = []
+        self.last_leak = None
+        self.last_vulns = []      # confirmed hits from active modules (403/LFI/SSRF)
 
     # ---------- Menu loop ----------
     def run(self):
@@ -107,9 +112,25 @@ class CommandCenter:
 
     # ---------- Tools ----------
     def tool_copilot(self):
-        if not self.last_results and not self.last_nuclei:
-            ui.warn("Run a scan first ([A] Autopilot or [1] Nmap) so the co-pilot has "
-                    "something to reason about.")
+        # Build extra context from whatever tools have been run this session.
+        extra = {}
+        if self.last_subdomains:
+            extra["subdomains"] = [{k: s.get(k) for k in ("host", "ip", "http_status")}
+                                   for s in self.last_subdomains if s.get("resolved")][:40]
+        if self.last_ports:
+            extra["open_ports"] = [{"port": p["port"], "service": p.get("service")}
+                                   for p in self.last_ports][:40]
+        if self.last_leak:
+            extra["leaks"] = {
+                "secrets": [s["type"] for s in self.last_leak.get("secrets", [])],
+                "exposed_files": [e["path"] for e in self.last_leak.get("exposed", [])],
+            }
+        if self.last_vulns:
+            extra["confirmed_vulns"] = self.last_vulns[-10:]
+
+        if not any([self.last_results, self.last_nuclei, self.last_web, extra]):
+            ui.warn("Run any recon first (e.g. [1] Nmap, [2] Subdomain, [4] Web Probe, "
+                    "[L] Leak, [P]/[S]/[9]) so the co-pilot has something to reason about.")
             return
         ui.info("Co-pilot reviewing the current recon state...")
         advice = SilentAI().copilot(
@@ -118,6 +139,7 @@ class CommandCenter:
             nuclei=self.last_nuclei or [],
             scan_meta=self.last_scan_meta,
             target=self.last_target,
+            extra=extra,
         )
         console.print(RichPanel.fit("[bold magenta]AI CO-PILOT — NEXT MOVES[/bold magenta]"))
         console.print(Markdown(advice))
@@ -313,6 +335,8 @@ class CommandCenter:
         if not results:
             ui.warn("No subdomains found, or sources did not respond.")
             return
+        self.last_subdomains = results
+        self.last_target = self.last_target or domain
 
         st = scanner.stats
         contrib = ", ".join(f"{k}:{v}" for k, v in st.get("passive_sources", {}).items() if v)
@@ -370,6 +394,8 @@ class CommandCenter:
         if not results:
             ui.warn("No open ports found.")
             return
+        self.last_ports = results
+        self.last_target = self.last_target or host
         t = Table(title=f"{host} — Open Ports")
         t.add_column("Port", justify="right", style="cyan")
         t.add_column("Service")
@@ -543,6 +569,9 @@ class CommandCenter:
             ui.success(f"Baseline {result['baseline']} — no bypass found "
                        f"(access control looks solid).")
             return
+        self.last_vulns.append({"type": "403-bypass", "url": url,
+                                "hits": [{"technique": h["technique"], "status": h["status"]}
+                                         for h in hits[:5]]})
         t = Table(title=f"{url} — Bypass Hits (baseline {result['baseline']})")
         t.add_column("Status", justify="right")
         t.add_column("Technique", style="cyan")
@@ -564,6 +593,8 @@ class CommandCenter:
             return
         ui.info(f"Hunting for secrets and exposed files on {url} ...")
         result = LeakFinder().run(url)
+        self.last_leak = result
+        self.last_target = self.last_target or url
         secrets, exposed = result["secrets"], result["exposed"]
 
         if secrets:
@@ -611,6 +642,9 @@ class CommandCenter:
         if not hits:
             ui.success("No path traversal / LFI found (no file-read evidence).")
             return
+        self.last_vulns.append({"type": "LFI", "url": result["url"],
+                                "hits": [{"param": h["param"], "signature": h["signature"]}
+                                         for h in hits[:5]]})
         t = Table(title=f"{result['url']} — Path Traversal / LFI Hits")
         t.add_column("Param", style="cyan")
         t.add_column("Signature", style="bold red")
@@ -654,6 +688,9 @@ class CommandCenter:
             ui.success(f"No reflected SSRF found ({result['payloads_tried']} payloads). "
                        f"[dim]Blind SSRF needs OOB — use [5] Nuclei.[/dim]")
             return
+        self.last_vulns.append({"type": "SSRF", "url": result["url"],
+                                "hits": [{"param": h["param"], "signature": h["signature"]}
+                                         for h in hits[:5]]})
         t = Table(title=f"{result['url']} — SSRF Hits")
         t.add_column("Param", style="cyan")
         t.add_column("Signature", style="bold red")
