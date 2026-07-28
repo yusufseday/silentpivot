@@ -714,10 +714,14 @@ class CommandCenter:
         t.add_column("File")
         t.add_column("Size", justify="right")
         for i, f in enumerate(files[:20], 1):
-            t.add_row(str(i), os.path.basename(f), f"{os.path.getsize(f)} B")
+            # Clickable file link on the name — click opens the report directly.
+            abs_f = os.path.abspath(f).replace("\\", "/")
+            name = f"[link=file:///{abs_f.lstrip('/')}]{os.path.basename(f)}[/link]"
+            t.add_row(str(i), name, f"{os.path.getsize(f)} B")
         console.print(t)
-        console.print("[dim]Enter a # to view, or e<#> to export (e.g. 'e2') to HTML/MD[/dim]")
-        sel = Prompt.ask("View / export # (blank to skip)", default="").strip().lower()
+        console.print("[dim]Enter a # to open (HTML opens in browser), or e<#> to "
+                      "export (e.g. 'e2') to HTML/MD[/dim]")
+        sel = Prompt.ask("Open / export # (blank to skip)", default="").strip().lower()
 
         # Export: re-render a saved report to another format from its JSON — no re-scan.
         if sel.startswith("e") and sel[1:].isdigit():
@@ -737,9 +741,13 @@ class CommandCenter:
         if sel.isdigit() and 1 <= int(sel) <= len(files):
             path = files[int(sel) - 1]
             if path.endswith(".html"):
-                # Raw HTML in a terminal is noise; point to the browser instead.
-                ui.info(f"Open in a browser: {ui.file_link(path)}  "
-                        f"[dim](e.g. xdg-open / firefox {path})[/dim]")
+                # Open the report in the default browser (works on any terminal).
+                import webbrowser
+                abs_path = os.path.abspath(path)
+                if webbrowser.open("file:///" + abs_path.replace("\\", "/")):
+                    ui.success(f"Opened in your browser: {os.path.basename(path)}")
+                else:
+                    ui.info(f"Open manually: {ui.file_link(path)}")
             else:
                 with open(path, encoding="utf-8") as fh:
                     console.print(RichPanel(fh.read(), border_style="dim"))
