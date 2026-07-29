@@ -741,11 +741,10 @@ class CommandCenter:
         if sel.isdigit() and 1 <= int(sel) <= len(files):
             path = files[int(sel) - 1]
             if path.endswith(".html"):
-                # Open the report in the default browser (works on any terminal).
-                import webbrowser
-                abs_path = os.path.abspath(path)
-                if webbrowser.open("file:///" + abs_path.replace("\\", "/")):
-                    ui.success(f"Opened in your browser: {os.path.basename(path)}")
+                # Open in the default app; its console output is suppressed so the
+                # terminal stays clean (browser GPU warnings, etc.).
+                if ui.open_path(path):
+                    ui.success(f"Opened: {os.path.basename(path)}")
                 else:
                     ui.info(f"Open manually: {ui.file_link(path)}")
             else:

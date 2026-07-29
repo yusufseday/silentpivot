@@ -2,6 +2,7 @@
 Both the CLI and the interactive panel are fed from here (no duplicated code)."""
 import os
 import sys
+import subprocess
 from urllib.parse import urlparse
 
 from rich.console import Console
@@ -84,6 +85,22 @@ def file_link(path):
     while still being a real file:// hyperlink in terminals that do support it."""
     abs_path = os.path.abspath(path).replace("\\", "/")
     return f"[link=file:///{abs_path.lstrip('/')}]{abs_path}[/link]"
+
+
+def open_path(path):
+    """Open a file with the OS default app, swallowing the launched app's own console
+    noise (e.g. Chrome's harmless GPU/VAAPI warnings on Linux VMs). Returns True on ok."""
+    path = os.path.abspath(path)
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)  # noqa: E501  (Windows-only)
+        else:
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            subprocess.Popen([opener, path],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except Exception:
+        return False
 
 
 def cve_link(cve_id):
