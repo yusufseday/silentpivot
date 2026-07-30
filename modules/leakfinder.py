@@ -14,6 +14,8 @@ import concurrent.futures
 from urllib.parse import urlparse, urljoin
 
 import requests
+
+from modules.opsec import profile as opsec
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -65,7 +67,7 @@ class LeakFinder:
         self.timeout = timeout
         self.max_workers = max_workers
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "Mozilla/5.0 SilentPivot"})
+        opsec.apply_to_session(self.session)
 
     # ---------- helpers ----------
     def _get(self, url):
@@ -97,7 +99,7 @@ class LeakFinder:
                 js.add(ju)
         js = list(js)[:25]
         if js:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=opsec.workers(self.max_workers)) as ex:
                 for ju, r in zip(js, ex.map(self._get, js)):
                     if r is not None:
                         contents.append((ju, r.text))
@@ -145,7 +147,7 @@ class LeakFinder:
                     "confidence": conf}
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=opsec.workers(self.max_workers)) as ex:
             for res in ex.map(probe, _EXPOSED_PATHS):
                 if res:
                     results.append(res)

@@ -19,6 +19,8 @@ import subprocess
 import concurrent.futures
 
 import requests
+
+from modules.opsec import profile as opsec
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -66,7 +68,7 @@ class SubdomainScanner:
     def __init__(self, http_timeout=6):
         self.http_timeout = http_timeout
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "Mozilla/5.0 SilentPivot"})
+        opsec.apply_to_session(self.session)
         self.stats = {}
         self._wildcard = False
 
@@ -77,6 +79,10 @@ class SubdomainScanner:
         domain = self._clean_domain(domain)
 
         sub_sources = self._gather_passive(domain)          # {sub: set(source names)}
+        # OPSEC passive mode: keep the OSINT sources, drop anything that touches the
+        # target (DNS brute-force + the HTTP enrichment/takeover probes).
+        if opsec.is_passive:
+            active = False
         active_subs = self.brute_force(domain, wordlist) if active else set()
 
         merged = {}
@@ -113,7 +119,7 @@ class SubdomainScanner:
             }
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=opsec.workers(max_workers)) as ex:
             for r in ex.map(one, list(merged.items())):
                 results.append(r)
         # Most actionable first: takeover candidates, then live HTTP, then resolved,
@@ -125,6 +131,9 @@ class SubdomainScanner:
     def _http_probe(self, host, timeout=None):
         """Returns (status, takeover, url) — url is the scheme that actually answered,
         so the UI can link to a URL that really works."""
+        if opsec.is_passive:   # probing a host is traffic to the target
+            return None, None, None
+        opsec.wait()           # stealth: pace the requests
         for scheme in ("https", "http"):
             url = f"{scheme}://{host}"
             try:
@@ -158,7 +167,7 @@ class SubdomainScanner:
             return None
 
         found = set()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=opsec.workers(max_workers)) as ex:
             for res in ex.map(check, words):
                 if res:
                     found.add(res)

@@ -4,6 +4,8 @@ import socket
 import ipaddress
 import functools
 
+from modules.opsec import profile as opsec
+
 # Single source of truth for scan-type labels (shared by panel, autopilot, CLI).
 SCAN_LABELS = {
     "1": "Fast (Top 100)",
@@ -65,6 +67,14 @@ class NetworkScanner:
         return _ipv6_available()
 
     def scan_target(self, target, scan_type="2"):
+        # Passive mode sends nothing to the target — an active port scan is exactly
+        # the kind of footprint it exists to avoid.
+        if opsec.is_passive:
+            print("[!] OPSEC passive mode — port scanning skipped (no packets to target).")
+            self.scan_meta = {"ips": self.resolve_all(target), "scanned_ip": None,
+                              "skipped": "passive"}
+            return []
+
         # -Pn: don't skip a host that blocks ping — essential behind a WAF/firewall
         # where ICMP/discovery is filtered but ports may still be open.
         # -6: required for IPv6 targets (otherwise nmap can hang/misbehave).
@@ -72,19 +82,23 @@ class NetworkScanner:
         # --host-timeout caps how long a single host can take, so a dead/unreachable
         # address (e.g. IPv6 with no route) can't hang the scan indefinitely.
         cap = '--host-timeout 10m'
+        # Timing/rate come from the OPSEC profile (-T4 normally, -T1 + rate caps in stealth).
+        tmg = f"{opsec.nmap_timing()} {opsec.nmap_extra()}".strip()
         if scan_type == "1":
             print(f"[!] Starting Fast Scan (Top 100 ports) on {target}...")
-            nmap_args = f'{base} {cap} -F -T4'
+            nmap_args = f'{base} {cap} -F {tmg}'
         elif scan_type == "3":
             print(f"[!] Starting Deep Scan (All ports) on {target} (this may take a while!)...")
             # Deep is expected to be long, so no host cap here.
-            nmap_args = f'{base} -p- -sV -O -T4'
+            nmap_args = f'{base} -p- -sV -O {tmg}'
         else:
             print(f"[!] Starting Standard Scan (Top 1000 ports + services) on {target}...")
             # --top-ports 1000 = the 1000 statistically most common ports (spread across
             # the whole range), so high-value services like RDP(3389), MySQL(3306),
             # web-alt(8080/8443) are covered — unlike a sequential -p 1-1000.
-            nmap_args = f'{base} {cap} --top-ports 1000 -sV -T4'
+            nmap_args = f'{base} {cap} --top-ports 1000 -sV {tmg}'
+        if opsec.is_stealth:
+            print("[!] OPSEC stealth — slow timing, this will take considerably longer.")
 
         all_ips = self.resolve_all(target)
         try:

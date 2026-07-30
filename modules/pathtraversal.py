@@ -14,6 +14,8 @@ import concurrent.futures
 from urllib.parse import urlparse, urlunparse, parse_qsl
 
 import requests
+
+from modules.opsec import profile as opsec
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -47,7 +49,7 @@ class PathTraversal:
         self.timeout = timeout
         self.max_workers = max_workers
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "Mozilla/5.0 SilentPivot"})
+        opsec.apply_to_session(self.session)
 
     def _inject(self, url, param, payload):
         p = urlparse(url)
@@ -80,6 +82,7 @@ class PathTraversal:
         return None
 
     def _try(self, target):
+        opsec.wait()   # stealth: random delay between requests
         param, payload = target
         test_url = self._inject(self._base_url, param, payload)
         try:
@@ -110,7 +113,7 @@ class PathTraversal:
         payloads = _PAYLOADS + [x for x in (extra_payloads or []) if x not in _PAYLOADS]
         targets = [(param, pl) for param in params for pl in payloads]
         hits = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=opsec.workers(self.max_workers)) as ex:
             for res in ex.map(self._try, targets):
                 if res:
                     hits.append(res)

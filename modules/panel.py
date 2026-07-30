@@ -22,6 +22,7 @@ from modules.leakfinder import LeakFinder
 from modules.pathtraversal import PathTraversal
 from modules.ssrf import SSRFScanner
 from modules.autopilot import run_autopilot
+from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
 from modules import reporter
 
 
@@ -77,6 +78,7 @@ class CommandCenter:
         "l": "tool_leak",
         "p": "tool_pathtraversal",
         "s": "tool_ssrf",
+        "o": "tool_opsec",
         "0": "exit",
     }
 
@@ -99,18 +101,60 @@ class CommandCenter:
         t.add_row("L", "Leak / Secret Finder    [dim](exposed keys, tokens, .git/.env)[/dim]")
         t.add_row("P", "Path Traversal / LFI    [dim](parameter file-read fuzzing)[/dim]")
         t.add_row("S", "SSRF Scan               [dim](reflected SSRF + AI payloads)[/dim]")
+        t.add_row("", "")
+        t.add_row("O", "OPSEC Profile           [dim](stealth / passive / proxy)[/dim]")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,
                                 border_style="green"))
 
     def _status_line(self):
+        # OPSEC is only called out when it's not the default, so normal runs stay clean.
+        ops = "" if opsec.mode == NORMAL and not opsec.proxy else \
+            f"[bold yellow]OPSEC: {opsec.summary()}[/] [dim]|[/dim] "
         if self.last_results is None:
-            return "[dim]no active scan[/dim]"
-        return (f"[dim]last target:[/dim] [cyan]{self.last_target}[/cyan] "
+            return f"{ops}[dim]no active scan[/dim]"
+        return (f"{ops}[dim]last target:[/dim] [cyan]{self.last_target}[/cyan] "
                 f"[dim]| {len(self.last_results)} open ports[/dim]")
 
     # ---------- Tools ----------
+    def tool_opsec(self):
+        """Set the footprint profile every module obeys (timing, proxy, passive)."""
+        console.print(RichPanel.fit(
+            f"[bold]Current:[/bold] {opsec.summary()}", border_style="yellow"))
+        console.print("[bold]1[/bold]  normal   [dim]fast, direct — default behaviour[/dim]")
+        console.print("[bold]2[/bold]  stealth  [dim]slow nmap (-T1), request jitter, "
+                      "low concurrency, rotating user-agents[/dim]")
+        console.print("[bold]3[/bold]  passive  [dim]no packets to the target — OSINT only[/dim]")
+        mode = Prompt.ask("Mode", choices=["1", "2", "3"],
+                          default={NORMAL: "1", STEALTH: "2", PASSIVE: "3"}[opsec.mode])
+        opsec.set_mode({"1": NORMAL, "2": STEALTH, "3": PASSIVE}[mode])
+
+        cur = opsec.proxy or ""
+        proxy = Prompt.ask("Proxy (e.g. socks5://127.0.0.1:9050, blank = none)",
+                           default=cur).strip()
+        opsec.set_proxy(proxy)
+        if opsec.proxy and not opsec.proxy.startswith(("http://", "https://", "socks5://",
+                                                       "socks5h://", "socks4://")):
+            ui.warn("Proxy should look like socks5://host:port or http://host:port")
+
+        ui.success(f"OPSEC profile: {opsec.summary()}")
+        if opsec.is_stealth:
+            ui.info("Stealth is much slower by design — scans may take many minutes.")
+        if opsec.is_passive:
+            ui.info("Passive mode: port scans and active fuzzers are disabled; "
+                    "OSINT tools (subdomain sources, CVE/KEV lookups) still work.")
+        if opsec.proxy and "socks" in opsec.proxy:
+            ui.info("SOCKS proxy needs the extra dependency: pip install 'requests[socks]'")
+
+    def _blocked_by_passive(self, what):
+        """Guard for tools that send traffic to the target."""
+        if opsec.is_passive:
+            ui.warn(f"{what} is disabled in OPSEC passive mode (it would touch the target). "
+                    f"Switch profile with [O].")
+            return True
+        return False
+
     def tool_copilot(self):
         # Build extra context from whatever tools have been run this session.
         extra = {}
@@ -146,6 +190,8 @@ class CommandCenter:
         console.print("[dim]Suggestions only — verify each against your authorized scope.[/dim]")
 
     def tool_autopilot(self):
+        if self._blocked_by_passive("Autopilot"):
+            return
         target = Prompt.ask("Target IP/domain", default=self.last_target or "").strip()
         if not target:
             return
@@ -182,6 +228,8 @@ class CommandCenter:
         ui.success(f"Unified report saved: {ui.file_link(path)}")
 
     def tool_nmap(self):
+        if self._blocked_by_passive("Nmap scanning"):
+            return
         target = Prompt.ask("Target IP/domain").strip()
         if not target:
             return
@@ -381,6 +429,8 @@ class CommandCenter:
         ui.success(f"{len(resolved)} resolved subdomains ({len(results)} total discovered).")
 
     def tool_portcheck(self):
+        if self._blocked_by_passive("Port checking"):
+            return
         host = Prompt.ask("Target IP/host").strip()
         if not host:
             return
@@ -406,6 +456,8 @@ class CommandCenter:
         ui.success(f"{len(results)} open ports found.")
 
     def tool_webprobe(self):
+        if self._blocked_by_passive("Web probing"):
+            return
         default = self.last_target or ""
         host = Prompt.ask("Target host/domain", default=default).strip()
         if not host:
@@ -430,6 +482,8 @@ class CommandCenter:
         ui.success(f"{len(results)} web endpoint(s) fingerprinted.")
 
     def tool_nuclei(self):
+        if self._blocked_by_passive("Nuclei scanning"):
+            return
         scanner = NucleiScanner()
         if not scanner.available:
             ui.warn("nuclei is not installed / not on PATH.")
@@ -551,6 +605,8 @@ class CommandCenter:
         ui.success(f"Report saved: {ui.file_link(path)}")
 
     def tool_bypass403(self):
+        if self._blocked_by_passive("403 bypass testing"):
+            return
         url = ui.normalize_url(Prompt.ask("Forbidden URL (e.g. https://host/admin)"))
         if not url:
             ui.error("Invalid URL — enter something like http://host/admin")
@@ -586,6 +642,8 @@ class CommandCenter:
                 f"be a login/redirect page).")
 
     def tool_leak(self):
+        if self._blocked_by_passive("Leak scanning"):
+            return
         default = self.last_target or ""
         url = ui.normalize_url(Prompt.ask("Target URL/host", default=default))
         if not url:
@@ -627,6 +685,8 @@ class CommandCenter:
                     f"verify (low-confidence hits may be false positives).")
 
     def tool_pathtraversal(self):
+        if self._blocked_by_passive("LFI fuzzing"):
+            return
         console.print("[dim]Tip: include a parameter, e.g. https://host/view.php?file=welcome[/dim]")
         url = ui.normalize_url(Prompt.ask("Target URL"))
         if not url:
@@ -675,6 +735,8 @@ class CommandCenter:
         return extra
 
     def tool_ssrf(self):
+        if self._blocked_by_passive("SSRF fuzzing"):
+            return
         console.print("[dim]Tip: include a URL-taking parameter, e.g. ?url=https://x[/dim]")
         url = ui.normalize_url(Prompt.ask("Target URL"))
         if not url:

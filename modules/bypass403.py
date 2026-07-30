@@ -10,6 +10,8 @@ import concurrent.futures
 from urllib.parse import urlparse
 
 import requests
+
+from modules.opsec import profile as opsec
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -32,7 +34,7 @@ class Bypass403:
         self.timeout = timeout
         self.max_workers = max_workers
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "Mozilla/5.0 SilentPivot"})
+        opsec.apply_to_session(self.session)
 
     def _req(self, method, url, headers=None):
         try:
@@ -80,6 +82,7 @@ class Bypass403:
         return attempts
 
     def _try(self, attempt):
+        opsec.wait()   # stealth: random delay between requests
         technique, method, url, headers = attempt
         r = self._req(method, url, headers)
         if r is None:
@@ -102,7 +105,7 @@ class Bypass403:
 
         hits = []
         attempts = self._build_attempts(url, extra_payloads)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=opsec.workers(self.max_workers)) as ex:
             for res in ex.map(self._try, attempts):
                 if res:
                     hits.append(res)
