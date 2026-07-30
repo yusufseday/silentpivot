@@ -60,6 +60,24 @@ class OpsecProfile:
     def set_proxy(self, proxy):
         self.proxy = (proxy or "").strip()
 
+    def proxy_problem(self):
+        """Return a human-readable problem with the current proxy, or None if it's fine.
+        Catches the common trap: a socks:// proxy without the PySocks dependency, which
+        would otherwise fail mid-scan with a confusing requests error."""
+        if not self.proxy:
+            return None
+        if not self.proxy.startswith(("http://", "https://", "socks4://", "socks5://",
+                                      "socks5h://")):
+            return ("Proxy must start with http://, https:// or socks5:// "
+                    f"(got: {self.proxy})")
+        if self.proxy.startswith("socks"):
+            try:
+                import socks  # noqa: F401  (PySocks, pulled in by requests[socks])
+            except ImportError:
+                return ("SOCKS proxy needs PySocks — install it with: "
+                        "pip install 'requests[socks]'")
+        return None
+
     def summary(self):
         """One-line status for the panel."""
         proxy = self.proxy if self.proxy else "direct"

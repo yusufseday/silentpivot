@@ -134,9 +134,12 @@ class CommandCenter:
         proxy = Prompt.ask("Proxy (e.g. socks5://127.0.0.1:9050, blank = none)",
                            default=cur).strip()
         opsec.set_proxy(proxy)
-        if opsec.proxy and not opsec.proxy.startswith(("http://", "https://", "socks5://",
-                                                       "socks5h://", "socks4://")):
-            ui.warn("Proxy should look like socks5://host:port or http://host:port")
+        # Catch proxy problems now, not in the middle of a scan.
+        problem = opsec.proxy_problem()
+        if problem:
+            ui.error(problem)
+            if not Confirm.ask("Keep this proxy anyway?", default=False):
+                opsec.set_proxy("")
 
         ui.success(f"OPSEC profile: {opsec.summary()}")
         if opsec.is_stealth:
@@ -144,8 +147,6 @@ class CommandCenter:
         if opsec.is_passive:
             ui.info("Passive mode: port scans and active fuzzers are disabled; "
                     "OSINT tools (subdomain sources, CVE/KEV lookups) still work.")
-        if opsec.proxy and "socks" in opsec.proxy:
-            ui.info("SOCKS proxy needs the extra dependency: pip install 'requests[socks]'")
 
     def _blocked_by_passive(self, what):
         """Guard for tools that send traffic to the target."""
