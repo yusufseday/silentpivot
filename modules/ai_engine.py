@@ -145,6 +145,33 @@ class SilentAI:
         """
         return self._complete(prompt)
 
+    def attack_narrative(self, techniques, target=None):
+        """Turn mapped ATT&CK techniques into an adversary kill-chain story.
+        Techniques are supplied by the deterministic mapper — the model narrates them
+        and must not invent new technique IDs."""
+        prompt = f"""
+        You are a red team lead writing the attack narrative for an AUTHORIZED engagement
+        against {target or 'the target'}. These ATT&CK techniques were mapped from real,
+        verified findings:
+        {json.dumps(techniques, indent=2, ensure_ascii=False)}
+
+        RULES:
+        - Use ONLY the technique IDs listed above; never invent or add technique IDs.
+        - Tie each step to the concrete evidence given (ports, CVEs, files, creds).
+        - Be realistic about what actually chains together; say so if the path is limited.
+        - Concise and operational — no filler, no generic security advice.
+
+        Write in English, Markdown:
+        ## Attack Narrative
+        A short kill-chain story: how an adversary moves from initial access to impact,
+        step by step, citing technique IDs inline (e.g. "via RDP (T1021.001)").
+        ## Most Likely Path
+        The single most realistic chain, as 3-6 numbered steps.
+        ## Detection Opportunities
+        For the key steps, what a blue team would see (log source / signal).
+        """
+        return self._complete(prompt)
+
     def suggest_payloads(self, context, kind, n=12):
         """Generate up to `n` target-tailored payloads for an active module (ssrf / lfi
         / 403). AI only PROPOSES candidates; the calling module still tests each one and

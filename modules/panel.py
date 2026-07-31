@@ -23,6 +23,7 @@ from modules.pathtraversal import PathTraversal
 from modules.ssrf import SSRFScanner
 from modules.autopilot import run_autopilot
 from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
+from modules import attack_map
 from modules import reporter
 
 
@@ -40,6 +41,8 @@ class CommandCenter:
         self.last_ports = []
         self.last_leak = None
         self.last_vulns = []      # confirmed hits from active modules (403/LFI/SSRF)
+        self.last_attack = []     # mapped ATT&CK techniques
+        self.last_attack_story = None
 
     # ---------- Menu loop ----------
     def run(self):
@@ -78,6 +81,7 @@ class CommandCenter:
         "l": "tool_leak",
         "p": "tool_pathtraversal",
         "s": "tool_ssrf",
+        "m": "tool_attack_map",
         "o": "tool_opsec",
         "0": "exit",
     }
@@ -102,6 +106,7 @@ class CommandCenter:
         t.add_row("P", "Path Traversal / LFI    [dim](parameter file-read fuzzing)[/dim]")
         t.add_row("S", "SSRF Scan               [dim](reflected SSRF + AI payloads)[/dim]")
         t.add_row("", "")
+        t.add_row("M", "[bold]ATT&CK Map[/bold]              [dim](techniques + AI kill-chain narrative)[/dim]")
         t.add_row("O", "OPSEC Profile           [dim](stealth / passive / proxy)[/dim]")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
@@ -118,6 +123,48 @@ class CommandCenter:
                 f"[dim]| {len(self.last_results)} open ports[/dim]")
 
     # ---------- Tools ----------
+    def _map_attack(self):
+        """Map everything gathered this session into ATT&CK techniques."""
+        return attack_map.map_findings(
+            findings=self.last_results or [], nuclei=self.last_nuclei or [],
+            web=self.last_web, subdomains=self.last_subdomains,
+            leak=self.last_leak, vulns=self.last_vulns, scan_meta=self.last_scan_meta,
+        )
+
+    def tool_attack_map(self):
+        techniques = self._map_attack()
+        if not techniques:
+            ui.warn("Nothing mapped yet — run some recon first ([A], [1], [2], [5], [L]...).")
+            return
+
+        t = Table(title=f"MITRE ATT&CK — {self.last_target or 'current session'} "
+                        f"({len(techniques)} techniques)")
+        t.add_column("Tactic", style="magenta")
+        t.add_column("Technique", style="cyan")
+        t.add_column("Name")
+        t.add_column("Evidence")
+        for tech in techniques:
+            ev = ", ".join(tech["evidence"][:3])
+            if len(tech["evidence"]) > 3:
+                ev += f" (+{len(tech['evidence']) - 3})"
+            tid = (f"[link=https://attack.mitre.org/techniques/"
+                   f"{tech['id'].replace('.', '/')}/]{tech['id']}[/link]")
+            t.add_row(tech["tactic"], tid, tech["name"], ev or "[dim]-[/dim]")
+        console.print(t)
+
+        # Coverage line: which kill-chain stages we already touch.
+        summary = attack_map.tactic_summary(techniques)
+        ui.info("Kill-chain coverage: " +
+                " · ".join(f"{k} ({len(v)})" for k, v in summary.items()))
+
+        if Confirm.ask("Generate the AI attack narrative?", default=True):
+            ui.info("Building the adversary kill-chain story...")
+            story = SilentAI().attack_narrative(techniques, target=self.last_target)
+            console.print(RichPanel.fit("[bold red]ADVERSARY KILL-CHAIN[/bold red]"))
+            console.print(Markdown(story))
+            self.last_attack_story = story
+        self.last_attack = techniques
+
     def tool_opsec(self):
         """Set the footprint profile every module obeys (timing, proxy, passive)."""
         console.print(RichPanel.fit(
@@ -601,6 +648,9 @@ class CommandCenter:
         report = reporter.build_report_data(
             self.last_target, SCAN_LABELS.get(self.last_scan_type, "?"),
             self.last_results, analysis, scan_meta=self.last_scan_meta,
+            web=self.last_web, nuclei=self.last_nuclei or [],
+            attack=self.last_attack or self._map_attack(),
+            attack_story=self.last_attack_story,
         )
         path = reporter.save_report(report, fmt=fmt)
         ui.success(f"Report saved: {ui.file_link(path)}")

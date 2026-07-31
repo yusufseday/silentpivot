@@ -9,6 +9,7 @@ from modules.vuln_checker import VulnChecker
 from modules.webprobe import WebProber, WEB_PORTS
 from modules.nuclei import NucleiScanner
 from modules.ai_engine import SilentAI
+from modules import attack_map
 from modules import reporter
 
 
@@ -82,7 +83,16 @@ def run_autopilot(target, scan_type="2", use_ai=True, use_nuclei=True,
     else:
         log("[5/5] AI analysis skipped")
 
+    # Map findings to MITRE ATT&CK (deterministic — no AI needed for the mapping).
+    try:
+        attack = attack_map.map_findings(findings=enriched, nuclei=nuclei, web=web,
+                                         scan_meta=scan_meta)
+    except Exception as e:
+        log(f"ATT&CK mapping failed: {e}")
+        attack = []
+
     return reporter.build_report_data(
         target, SCAN_LABELS.get(scan_type, scan_type), enriched, analysis,
         web=web, nuclei=nuclei, nuclei_meta=nuclei_meta, scan_meta=scan_meta,
+        attack=attack,
     )
