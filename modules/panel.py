@@ -180,13 +180,19 @@ class CommandCenter:
         cur = opsec.proxy or ""
         proxy = Prompt.ask("Proxy (e.g. socks5://127.0.0.1:9050, blank = none)",
                            default=cur).strip()
-        opsec.set_proxy(proxy)
-        # Catch proxy problems now, not in the middle of a scan.
-        problem = opsec.proxy_problem()
+        # Validate BEFORE assigning: a rejected (or Ctrl+C'd) entry must never leave a
+        # broken proxy configured behind it.
+        problem = opsec.proxy_problem(proxy)
         if problem:
             ui.error(problem)
-            if not Confirm.ask("Keep this proxy anyway?", default=False):
-                opsec.set_proxy("")
+            try:
+                keep = Confirm.ask("Keep this proxy anyway?", default=False)
+            except KeyboardInterrupt:
+                keep = False
+                console.print()
+            if not keep:
+                proxy = ""
+        opsec.set_proxy(proxy)
 
         ui.success(f"OPSEC profile: {opsec.summary()}")
         nmap_warn = opsec.nmap_proxy_warning()
