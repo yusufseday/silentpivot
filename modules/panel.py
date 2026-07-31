@@ -671,15 +671,22 @@ class CommandCenter:
         if not url:
             ui.error("Invalid URL — enter something like http://host/admin")
             return
-        extra = self._ai_payloads("403 bypass path variants")
-        ui.info(f"Trying 403/401 bypass techniques on {url} ...")
-        result = Bypass403().run(url, extra_payloads=extra)
-        if result["baseline"] is None:
+        # Check first, ask later: no point generating payloads for a URL that isn't
+        # actually forbidden.
+        scanner = Bypass403()
+        ui.info(f"Checking {url} ...")
+        baseline = scanner.baseline_status(url)
+        if baseline is None:
             ui.error("Could not reach the URL.")
             return
-        if not result["applicable"]:
-            ui.warn(f"URL returned {result['baseline']} (not 401/403) — nothing to bypass.")
+        if baseline not in (401, 403):
+            ui.warn(f"URL returned {baseline} (not 401/403) — nothing to bypass.")
             return
+        ui.info(f"Baseline {baseline} — bypass techniques apply.")
+
+        extra = self._ai_payloads("403 bypass path variants")
+        ui.info(f"Trying 403/401 bypass techniques on {url} ...")
+        result = scanner.run(url, extra_payloads=extra, baseline=baseline)
         hits = result["hits"]
         if not hits:
             ui.success(f"Baseline {result['baseline']} — no bypass found "

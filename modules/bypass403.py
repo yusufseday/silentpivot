@@ -94,12 +94,19 @@ class Bypass403:
                     "status": status, "length": length}
         return None
 
-    def run(self, url, extra_payloads=None):
+    def baseline_status(self, url):
+        """Status code of a plain GET — lets the caller check whether bypassing is even
+        relevant (401/403) before spending time on payload generation."""
+        r = self._req("GET", url)
+        return r[0] if r else None
+
+    def run(self, url, extra_payloads=None, baseline=None):
         """Returns {url, baseline, applicable, hits}. `hits` = techniques that got
         a < 400 response. `applicable` is False if the URL isn't 401/403 to begin with.
-        `extra_payloads` (e.g. AI-suggested path variants) are tested like the built-ins."""
-        base = self._req("GET", url)
-        baseline = base[0] if base else None
+        `extra_payloads` (e.g. AI-suggested path variants) are tested like the built-ins.
+        `baseline` can be passed in to reuse an already-known status code."""
+        if baseline is None:
+            baseline = self.baseline_status(url)
         if baseline not in (401, 403):
             return {"url": url, "baseline": baseline, "applicable": False, "hits": []}
 
