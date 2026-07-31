@@ -37,7 +37,9 @@ SERVICE_TECHNIQUES = {
     "ms-sql-s": _t("T1210", "Exploitation of Remote Services", "Lateral Movement"),
     "mongodb": _t("T1210", "Exploitation of Remote Services", "Lateral Movement"),
     "redis": _t("T1210", "Exploitation of Remote Services", "Lateral Movement"),
-    "smtp": _t("T1566", "Phishing", "Initial Access"),
+    # An exposed SMTP service is an information/relay surface — calling it "Phishing"
+    # overstates it, so map it to what the port itself actually gives an adversary.
+    "smtp": _t("T1590", "Gather Victim Network Information", "Reconnaissance"),
     "http": _t("T1190", "Exploit Public-Facing Application", "Initial Access"),
     "https": _t("T1190", "Exploit Public-Facing Application", "Initial Access"),
     "http-proxy": _t("T1090", "Proxy", "Command and Control"),
@@ -74,15 +76,28 @@ FINDING_TECHNIQUES = {
     "default_creds": _t("T1078.001", "Valid Accounts: Default Accounts", "Initial Access"),
     "cloud_creds": _t("T1078.004", "Valid Accounts: Cloud Accounts", "Initial Access"),
     "waf": _t("T1090.003", "Proxy: Multi-hop / CDN in path", "Defense Evasion"),
+    "backdoor": _t("T1059", "Command and Scripting Interpreter", "Execution"),
+    "sqli": _t("T1190", "Exploit Public-Facing Application", "Initial Access"),
+    "xss": _t("T1059.007", "Command and Scripting Interpreter: JavaScript", "Execution"),
 }
 
 # nuclei template-id / name keywords -> finding type (checked in order)
 _NUCLEI_KEYWORDS = [
+    ("backdoor", "backdoor"),
     ("default-login", "default_creds"),
     ("default-cred", "default_creds"),
     ("weak-credential", "default_creds"),
+    ("weak-password", "default_creds"),
     ("empty-password", "default_creds"),
+    ("anonymous-login", "default_creds"),
     ("rce", "cve"),
+    ("remote code execution", "cve"),
+    ("command execution", "cve"),
+    ("command injection", "cve"),
+    ("deserialization", "cve"),
+    ("sql-injection", "sqli"),
+    ("sqli", "sqli"),
+    ("xss", "xss"),
     ("traversal", "path_traversal"),
     ("lfi", "LFI"),
     ("ssrf", "SSRF"),

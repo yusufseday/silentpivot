@@ -62,12 +62,13 @@ def run_autopilot(target, scan_type="2", use_ai=True, use_nuclei=True,
         log("      nuclei disabled")
     elif not ns.available:
         log("      nuclei not installed — skipping (install for active scanning)")
-    elif not web:
-        log("      no web endpoints — skipping nuclei")
     else:
         try:
-            urls = [w["url"] for w in web]
-            nuclei = ns.scan(urls, severities=nuclei_severities) or []
+            # Scan the web endpoints AND the bare host: nuclei's network templates
+            # (FTP/SMB/SSH/database checks) only fire against the host itself, and
+            # those catch things like the vsftpd backdoor that web URLs never reveal.
+            targets = [w["url"] for w in web] + [target]
+            nuclei = ns.scan(targets, severities=nuclei_severities) or []
             nuclei_meta = ns.meta
         except Exception as e:
             log(f"nuclei failed: {e}")
