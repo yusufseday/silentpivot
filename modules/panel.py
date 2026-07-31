@@ -189,6 +189,9 @@ class CommandCenter:
                 opsec.set_proxy("")
 
         ui.success(f"OPSEC profile: {opsec.summary()}")
+        nmap_warn = opsec.nmap_proxy_warning()
+        if nmap_warn:
+            ui.warn(nmap_warn)
         if opsec.is_stealth:
             ui.info("Stealth is much slower by design — scans may take many minutes.")
         if opsec.is_passive:

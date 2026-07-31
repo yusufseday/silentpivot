@@ -105,9 +105,32 @@ class OpsecProfile:
         return "-T1" if self.is_stealth else "-T4"
 
     def nmap_extra(self):
-        """Extra nmap flags for a quieter scan profile."""
-        # --max-rate keeps packet rate low; -f fragments packets to slip past simple IDS.
-        return "--max-rate 50 --scan-delay 500ms" if self.is_stealth else ""
+        """Extra nmap flags for a quieter scan profile / proxy compatibility."""
+        flags = []
+        if self.is_stealth:
+            # Keep the packet rate low and space out probes.
+            flags.append("--max-rate 50 --scan-delay 500ms")
+        if self.proxy:
+            # Raw SYN scans cannot be proxied. -sT (TCP connect) is the only mode that
+            # works when the user wraps the tool in proxychains, so prefer it whenever a
+            # proxy is configured — otherwise the scan would silently bypass the proxy.
+            flags.append("-sT")
+        return " ".join(flags)
+
+    # Proxying nmap is NOT possible from inside this process: nmap opens its own raw
+    # sockets, so a requests-level proxy never sees that traffic.
+    def covers_nmap(self):
+        """Whether the configured proxy also covers nmap traffic. It does not —
+        unless the whole tool is launched under proxychains."""
+        return bool(os.getenv("PROXYCHAINS_CONF_FILE") or os.getenv("LD_PRELOAD", "").find("proxychains") >= 0)
+
+    def nmap_proxy_warning(self):
+        """Explain the nmap/proxy gap, or None when there's nothing to warn about."""
+        if not self.proxy or self.covers_nmap():
+            return None
+        return ("Proxy applies to HTTP modules only — nmap sends its own packets and "
+                "would reveal your real IP. To proxy everything, launch the tool with "
+                "proxychains:  proxychains4 python silentpivot.py")
 
     def apply_to_session(self, session):
         """Configure a requests.Session with the current proxy + user-agent."""

@@ -99,6 +99,11 @@ class NetworkScanner:
             nmap_args = f'{base} {cap} --top-ports 1000 -sV {tmg}'
         if opsec.is_stealth:
             print("[!] OPSEC stealth — slow timing, this will take considerably longer.")
+        # A proxy set in the profile does NOT cover nmap's own packets — say so loudly,
+        # because silently scanning from the real IP is an OPSEC failure.
+        warn = opsec.nmap_proxy_warning()
+        if warn:
+            print(f"[!] OPSEC WARNING: {warn}")
 
         all_ips = self.resolve_all(target)
         try:
