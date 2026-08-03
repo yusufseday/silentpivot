@@ -180,12 +180,17 @@ def c_validators():
 
 def c_contentdisco():
     from modules.contentdisco import ContentDiscovery, BUILTIN_WORDLIST
+    # ffuf base64-encodes FUZZ values in JSON output — the parser must decode them.
     ffuf = ('{"input":{"FUZZ":"admin"},"url":"http://t/admin","status":200,"length":12}\n'
+            '{"input":{"FUZZ":"cGhwTXlBZG1pbg=="},"status":301,"length":9}\n'
+            '{"input":{"FUZZ":"a"},"status":"abc"}\n'
             'not json')
     gob = "/admin  (Status: 301) [Size: 234] [--> /admin/]\nnoise"
     f = ContentDiscovery.parse_ffuf(ffuf)
     g = ContentDiscovery.parse_gobuster(gob)
-    ok = (len(f) == 1 and f[0]["path"] == "/admin" and f[0]["status"] == 200
+    paths = [x["path"] for x in f]
+    ok = (paths == ["/admin", "/phpMyAdmin"]          # decoded, bad row skipped
+          and f[0]["status"] == 200
           and len(g) == 1 and g[0]["status"] == 301 and g[0]["redirect"] == "/admin/"
           and len(BUILTIN_WORDLIST) > 100)
     tool = ContentDiscovery.detect_tool() or "none (python fallback)"

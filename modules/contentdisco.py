@@ -12,6 +12,8 @@ Active testing — authorized targets only.
 """
 import os
 import json
+import base64
+import binascii
 import shutil
 import tempfile
 import subprocess
@@ -94,6 +96,33 @@ class ContentDiscovery:
         return None
 
     @staticmethod
+    def _ffuf_path(item, base_url=""):
+        """Recover the real path from an ffuf result.
+
+        ffuf's JSON output base64-encodes the values in `input`, so FUZZ comes back as
+        e.g. 'cGhwTXlBZG1pbg==' for 'phpMyAdmin'. The result `url` is authoritative when
+        present; otherwise decode the input, falling back to the raw value.
+        """
+        url = str(item.get("url") or "")
+        if url:
+            path = urlparse(url).path or "/"
+            if base_url:
+                prefix = urlparse(base_url).path.rstrip("/")
+                if prefix and path.startswith(prefix):
+                    path = path[len(prefix):] or "/"
+            return path if path.startswith("/") else "/" + path
+
+        inp = item.get("input")
+        raw = inp.get("FUZZ", "") if isinstance(inp, dict) else ""
+        raw = str(raw)
+        try:
+            decoded = base64.b64decode(raw, validate=True).decode("utf-8", "strict")
+            raw = decoded
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            pass          # not base64 (older ffuf) — use the value as-is
+        return "/" + raw.lstrip("/")
+
+    @staticmethod
     def _as_int(value, default=0):
         """Tolerant int(): tool output varies between versions, so a surprising type
         must never abort the whole parse."""
@@ -103,7 +132,7 @@ class ContentDiscovery:
             return default
 
     @staticmethod
-    def parse_ffuf(stdout):
+    def parse_ffuf(stdout, base_url=""):
         """ffuf -json prints one JSON object per result line. Written defensively —
         unexpected shapes are skipped rather than raising."""
         out = []
@@ -122,13 +151,11 @@ class ContentDiscovery:
             for it in items:
                 if not isinstance(it, dict) or "status" not in it:
                     continue
-                inp = it.get("input")
-                fuzz = inp.get("FUZZ", "") if isinstance(inp, dict) else ""
                 status = ContentDiscovery._as_int(it.get("status"), 0)
                 if not status:
                     continue
                 out.append({
-                    "path": "/" + str(fuzz).lstrip("/"),
+                    "path": ContentDiscovery._ffuf_path(it, base_url),
                     "url": str(it.get("url") or ""),
                     "status": status,
                     "size": ContentDiscovery._as_int(it.get("length"), 0),
@@ -170,7 +197,7 @@ class ContentDiscovery:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUT)
         except (subprocess.TimeoutExpired, OSError):
             return []
-        return (self.parse_ffuf(proc.stdout) if tool == "ffuf"
+        return (self.parse_ffuf(proc.stdout, base_url) if tool == "ffuf"
                 else self.parse_gobuster(proc.stdout))
 
     # ---------- python fallback ----------
