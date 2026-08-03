@@ -47,16 +47,22 @@ class CommandCenter:
     # ---------- Menu loop ----------
     def run(self):
         ui.print_banner()
+        # The full menu is drawn once; afterwards a single compact line keeps the
+        # terminal readable so scan output stays visible instead of being pushed away
+        # by a 20-line menu after every action. 'h' brings the full menu back.
+        self._show_menu()
         while True:
-            self._show_menu()
-            choice = Prompt.ask("\n[bold cyan]Choice[/bold cyan]", default="0").strip().lower()
+            choice = self._ask_choice()
             action = self.MENU.get(choice)
             if action is None:
-                ui.warn("Invalid choice.")
+                ui.warn("Invalid choice — press [bold]h[/bold] for the full menu.")
                 continue
             if action == "exit":
                 console.print("\n[bold green]See you. Stay safe.[/bold green]\n")
                 break
+            if action == "help":
+                self._show_menu()
+                continue
             try:
                 getattr(self, action)()
             except KeyboardInterrupt:
@@ -65,6 +71,15 @@ class CommandCenter:
                 ui.error(f"Something went wrong: {e}")
                 console.print("[dim]    (returning to the menu — nothing was saved)[/dim]")
             console.print()
+
+    def _ask_choice(self):
+        """Compact prompt: one dim hint line (+ status only when there's state),
+        instead of redrawing the full menu after every action."""
+        console.print("[dim]A auto · ? co-pilot · 1-9/L/P/S tools · M att&ck · "
+                      "O opsec · h menu · 0 exit[/dim]")
+        if self.last_results or self.last_target or opsec.mode != NORMAL or opsec.proxy:
+            console.print(f"[dim]{self._status_line()}[/dim]")
+        return Prompt.ask("[bold cyan]›[/bold cyan]", default="0").strip().lower()
 
     MENU = {
         "a": "tool_autopilot",
@@ -83,6 +98,7 @@ class CommandCenter:
         "s": "tool_ssrf",
         "m": "tool_attack_map",
         "o": "tool_opsec",
+        "h": "help",
         "0": "exit",
     }
 
@@ -108,6 +124,7 @@ class CommandCenter:
         t.add_row("", "")
         t.add_row("M", "[bold]ATT&CK Map[/bold]              [dim](techniques + AI kill-chain narrative)[/dim]")
         t.add_row("O", "OPSEC Profile           [dim](stealth / passive / proxy)[/dim]")
+        t.add_row("h", "[dim]Show this menu again[/dim]")
         t.add_row("0", "[red]Exit[/red]")
         status = self._status_line()
         console.print(RichPanel(t, title="[bold]Command Center[/bold]", subtitle=status,

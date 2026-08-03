@@ -12,6 +12,15 @@ load_dotenv()
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
+# Shared rule: models like to invent plausible-sounding tool syntax (e.g. a SQLMap
+# "module" that doesn't exist). Operators act on these lines, so wrong syntax is worse
+# than no syntax.
+TOOL_ACCURACY_RULE = """- When you name a tool, give its REAL usage: a runnable command or an actual
+          module path (e.g. `searchsploit proftpd 1.3.1`, `msfconsole -q -x "use
+          exploit/unix/ftp/vsftpd_234_backdoor"`, `sqlmap -u <url> --dbs`). NEVER invent
+          module names, script names or flags. If you are unsure of the exact syntax,
+          name the tool only and say what to look for."""
+
 
 class SilentAI:
     def __init__(self):
@@ -36,6 +45,7 @@ class SilentAI:
           'exploitdb'/'poc' = a public exploit already exists.
         - If there are no verified CVEs, state this clearly and give a general risk
           assessment based on the service/version (do not cite specific CVE numbers).
+        {TOOL_ACCURACY_RULE}
 
         Produce the report in English, in Markdown, with these sections:
         1. **Executive Summary** — the most critical findings and overall risk level (per CVSS).
@@ -95,6 +105,7 @@ class SilentAI:
           priority), high 'epss' = likely exploited, 'exploitdb'/'poc' = public exploit
           exists. nuclei CRITICAL/HIGH findings are confirmed live issues.
         - Be concise and actionable; do not pad with generic advice.
+        {TOOL_ACCURACY_RULE}
 
         Write the report in English, in Markdown, with these sections:
         1. **Executive Summary** — overall risk posture and the top 3-5 things to fix first.
@@ -135,6 +146,9 @@ class SilentAI:
         - If a WAF/CDN is present, account for it (evasion or note it may block).
         - This is authorized testing; the operator will verify every suggestion, so be
           direct. Do NOT claim anything is confirmed vulnerable without evidence.
+        - Only mention a WAF/CDN if one appears in the data above; do not speculate
+          about defences that were not observed.
+        {TOOL_ACCURACY_RULE}
 
         Output concise Markdown (max ~8 concrete moves):
         ## Next Moves (prioritized)
@@ -160,6 +174,7 @@ class SilentAI:
         - Tie each step to the concrete evidence given (ports, CVEs, files, creds).
         - Be realistic about what actually chains together; say so if the path is limited.
         - Concise and operational — no filler, no generic security advice.
+        {TOOL_ACCURACY_RULE}
 
         Write in English, Markdown:
         ## Attack Narrative
