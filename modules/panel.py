@@ -21,6 +21,7 @@ from modules.bypass403 import Bypass403
 from modules.leakfinder import LeakFinder
 from modules.pathtraversal import PathTraversal
 from modules.ssrf import SSRFScanner
+from modules.contentdisco import ContentDiscovery
 from modules.autopilot import run_autopilot
 from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
 from modules import attack_map
@@ -42,6 +43,7 @@ class CommandCenter:
         self.last_ports = []
         self.last_leak = None
         self.last_vulns = []      # confirmed hits from active modules (403/LFI/SSRF)
+        self.last_content = []    # discovered paths
         self.last_attack = []     # mapped ATT&CK techniques
         self.last_attack_story = None
 
@@ -77,7 +79,7 @@ class CommandCenter:
         """Compact prompt: one dim hint line (+ status only when there's state),
         instead of redrawing the full menu after every action."""
         console.print("[dim]A auto · ? co-pilot · 1-9/L/P/S tools · M att&ck · "
-                      "O opsec · h menu · 0 exit[/dim]")
+                      "C content · O opsec · h menu · 0 exit[/dim]")
         if self.last_results or self.last_target or opsec.mode != NORMAL or opsec.proxy:
             console.print(f"[dim]{self._status_line()}[/dim]")
         return Prompt.ask("[bold cyan]›[/bold cyan]", default="0").strip().lower()
@@ -97,6 +99,7 @@ class CommandCenter:
         "l": "tool_leak",
         "p": "tool_pathtraversal",
         "s": "tool_ssrf",
+        "c": "tool_content",
         "m": "tool_attack_map",
         "o": "tool_opsec",
         "h": "help",
@@ -122,6 +125,7 @@ class CommandCenter:
         t.add_row("L", "Leak / Secret Finder    [dim](exposed keys, tokens, .git/.env)[/dim]")
         t.add_row("P", "Path Traversal / LFI    [dim](parameter file-read fuzzing)[/dim]")
         t.add_row("S", "SSRF Scan               [dim](reflected SSRF + AI payloads)[/dim]")
+        t.add_row("C", "Content Discovery       [dim](hidden paths, panels, backups)[/dim]")
         t.add_row("", "")
         t.add_row("M", "[bold]ATT&CK Map[/bold]              [dim](techniques + AI kill-chain narrative)[/dim]")
         t.add_row("O", "OPSEC Profile           [dim](stealth / passive / proxy)[/dim]")
@@ -856,6 +860,53 @@ class CommandCenter:
                       ui.safe(h["evidence"]))
         console.print(t)
         ui.error(f"⚠ {len(hits)} SSRF hit(s) — internal/metadata content reflected!")
+
+    def tool_content(self):
+        if self._blocked_by_passive("Content discovery"):
+            return
+        default = ""
+        if self.last_web:
+            default = self.last_web[0].get("url", "")
+        elif self.last_target:
+            default = f"http://{self.last_target}"
+        url = ui.normalize_url(Prompt.ask("Base URL", default=default))
+        if not url:
+            ui.error("Invalid URL — enter something like http://host")
+            return
+        wl = Prompt.ask("Wordlist path (blank = auto)", default="").strip() or None
+        if wl and not os.path.isfile(wl):
+            ui.warn(f"Wordlist not found: {wl} — using the built-in list.")
+            wl = None
+
+        scanner = ContentDiscovery()
+        engine = scanner.detect_tool() or "built-in python fuzzer"
+        ui.info(f"Discovering content on {url} via {engine} — this can take a while...")
+        results = scanner.run(url, wordlist_path=wl)
+        self.last_content = results
+        ui.info(f"Engine: [bold]{scanner.stats.get('method')}[/bold]")
+        if not results:
+            ui.success("No extra content discovered.")
+            return
+
+        t = Table(title=f"{url} — Discovered Content ({len(results)})")
+        t.add_column("Status", justify="right")
+        t.add_column("Path", style="cyan")
+        t.add_column("Size", justify="right")
+        t.add_column("Redirect")
+        for r in results:
+            code = r["status"]
+            style = ("green" if code < 300 else "cyan" if code < 400
+                     else "yellow" if code < 500 else "red")
+            t.add_row(f"[{style}]{code}[/]", ui.safe(r["path"]), str(r["size"]),
+                      ui.safe(r.get("redirect")))
+        console.print(t)
+
+        # Chain hints: what the operator should do with these paths next.
+        forbidden = [r["path"] for r in results if r["status"] in (401, 403)]
+        if forbidden:
+            ui.warn(f"{len(forbidden)} forbidden path(s) — try [9] 403 Bypass on: "
+                    f"{ui.safe(', '.join(forbidden[:3]))}")
+        ui.success(f"{len(results)} paths discovered.")
 
     def tool_reports(self):
         files = sorted(glob.glob(os.path.join("data", "*.md")) +

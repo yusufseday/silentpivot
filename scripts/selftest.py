@@ -178,6 +178,20 @@ def c_validators():
     return not bad, ("all input checks pass" if not bad else f"FAILED: {bad}")
 
 
+def c_contentdisco():
+    from modules.contentdisco import ContentDiscovery, BUILTIN_WORDLIST
+    ffuf = ('{"input":{"FUZZ":"admin"},"url":"http://t/admin","status":200,"length":12}\n'
+            'not json')
+    gob = "/admin  (Status: 301) [Size: 234] [--> /admin/]\nnoise"
+    f = ContentDiscovery.parse_ffuf(ffuf)
+    g = ContentDiscovery.parse_gobuster(gob)
+    ok = (len(f) == 1 and f[0]["path"] == "/admin" and f[0]["status"] == 200
+          and len(g) == 1 and g[0]["status"] == 301 and g[0]["redirect"] == "/admin/"
+          and len(BUILTIN_WORDLIST) > 100)
+    tool = ContentDiscovery.detect_tool() or "none (python fallback)"
+    return ok, f"ffuf+gobuster parsers OK | {len(BUILTIN_WORDLIST)} builtin words | tool: {tool}"
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -195,6 +209,7 @@ def main():
     check("SSRF signatures", c_ssrf)
     check("AI payload JSON parse", c_ai_payload_parse)
     check("Input validation", c_validators)
+    check("Content discovery parsers", c_contentdisco)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)
