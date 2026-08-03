@@ -35,6 +35,9 @@ class Bypass403:
         self.max_workers = max_workers
         self.session = requests.Session()
         opsec.apply_to_session(self.session)
+        # Body size of the site root, learned in run(); used to reject "bypasses" that
+        # merely return the homepage.
+        self._root_len = None
 
     def _req(self, method, url, headers=None):
         try:
@@ -88,11 +91,22 @@ class Bypass403:
         if r is None:
             return None
         status, length = r
-        # A bypass = a success/redirect (< 400) where the baseline was forbidden.
-        if status < 400:
-            return {"technique": technique, "method": method, "url": url,
-                    "status": status, "length": length}
-        return None
+        if status >= 400:
+            return None
+
+        # A 200 alone is not a bypass. Path tricks like '/../' normalize back to the
+        # site root, and rewrite headers are simply ignored by most servers — both
+        # return the homepage. If the body matches the site root we got the same page
+        # any visitor gets, not the protected resource.
+        if self._root_len is not None and abs(length - self._root_len) < 32:
+            return None
+        # TRACE echoes the request back; it never returns the protected resource, so
+        # it's reported as its own weakness rather than as a bypass.
+        if method == "TRACE":
+            return {"technique": "TRACE enabled (request echo, not resource access)",
+                    "method": method, "url": url, "status": status, "length": length}
+        return {"technique": technique, "method": method, "url": url,
+                "status": status, "length": length}
 
     def baseline_status(self, url):
         """Status code of a plain GET — lets the caller check whether bypassing is even
@@ -109,6 +123,12 @@ class Bypass403:
             baseline = self.baseline_status(url)
         if baseline not in (401, 403):
             return {"url": url, "baseline": baseline, "applicable": False, "hits": []}
+
+        # Learn what the site root looks like: any "bypass" that just returns the
+        # homepage is path normalization, not access to the protected resource.
+        p = urlparse(url)
+        root = self._req("GET", f"{p.scheme}://{p.netloc}/")
+        self._root_len = root[1] if root and root[0] < 400 else None
 
         hits = []
         attempts = self._build_attempts(url, extra_payloads)
