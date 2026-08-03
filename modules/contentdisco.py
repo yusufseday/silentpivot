@@ -63,6 +63,12 @@ DEFAULT_EXTENSIONS = ["", ".php", ".bak", ".old", ".txt", ".zip", ".json"]
 # Statuses worth reporting; 404 is noise, 5xx usually is too.
 INTERESTING = {200, 201, 202, 203, 204, 301, 302, 307, 308, 401, 403, 405, 500}
 
+# Safety rails for the pure-Python fuzzer. External tools (ffuf/gobuster) are built for
+# huge lists, but Python is not: a 220k-word list (Kali's dirbuster medium) times the
+# extension set would be over a million requests and a runaway scan. Cap and warn.
+MAX_WORDLIST_LINES = 50_000
+MAX_PYTHON_REQUESTS = 10_000
+
 
 class ContentDiscovery:
     def __init__(self, timeout=8, max_workers=20):
@@ -88,8 +94,18 @@ class ContentDiscovery:
         return None
 
     @staticmethod
+    def _as_int(value, default=0):
+        """Tolerant int(): tool output varies between versions, so a surprising type
+        must never abort the whole parse."""
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
     def parse_ffuf(stdout):
-        """ffuf -json prints one JSON object per result line."""
+        """ffuf -json prints one JSON object per result line. Written defensively —
+        unexpected shapes are skipped rather than raising."""
         out = []
         for line in (stdout or "").splitlines():
             line = line.strip()
@@ -99,17 +115,24 @@ class ContentDiscovery:
                 obj = json.loads(line)
             except ValueError:
                 continue
+            if not isinstance(obj, dict):
+                continue
             # ffuf wraps results differently across versions; accept both shapes.
             items = obj.get("results") if isinstance(obj.get("results"), list) else [obj]
             for it in items:
                 if not isinstance(it, dict) or "status" not in it:
                     continue
+                inp = it.get("input")
+                fuzz = inp.get("FUZZ", "") if isinstance(inp, dict) else ""
+                status = ContentDiscovery._as_int(it.get("status"), 0)
+                if not status:
+                    continue
                 out.append({
-                    "path": "/" + str(it.get("input", {}).get("FUZZ", "")).lstrip("/"),
-                    "url": it.get("url", ""),
-                    "status": int(it.get("status", 0)),
-                    "size": int(it.get("length", 0)),
-                    "redirect": it.get("redirectlocation") or "",
+                    "path": "/" + str(fuzz).lstrip("/"),
+                    "url": str(it.get("url") or ""),
+                    "status": status,
+                    "size": ContentDiscovery._as_int(it.get("length"), 0),
+                    "redirect": str(it.get("redirectlocation") or ""),
                 })
         return out
 
@@ -197,18 +220,24 @@ class ContentDiscovery:
 
     def _run_python(self, base_url, words, extensions):
         baseline = self._baseline(base_url)
-        candidates = []
+        seen, tasks = set(), []
+        truncated = False
         for w in words:
             # Words that already look like a file/path are used as-is.
-            if "." in w or "/" in w:
-                candidates.append(w)
-            else:
-                candidates.extend(w + ext for ext in extensions)
-        seen, tasks = set(), []
-        for c in candidates:
-            if c not in seen:
+            variants = [w] if ("." in w or "/" in w) else [w + ext for ext in extensions]
+            for c in variants:
+                if c in seen:
+                    continue
                 seen.add(c)
                 tasks.append((base_url, c, baseline))
+                # Hard stop: Python can't sanely fuzz a million paths, and doing so
+                # would hammer the target as much as ourselves.
+                if len(tasks) >= MAX_PYTHON_REQUESTS:
+                    truncated = True
+                    break
+            if truncated:
+                break
+        self._truncated = truncated
 
         results = []
         with concurrent.futures.ThreadPoolExecutor(
@@ -231,8 +260,14 @@ class ContentDiscovery:
         extensions = extensions if extensions is not None else DEFAULT_EXTENSIONS
         words = BUILTIN_WORDLIST
         if wordlist_path and os.path.isfile(wordlist_path):
+            words = []
             with open(wordlist_path, encoding="utf-8", errors="ignore") as fh:
-                words = [ln.strip() for ln in fh if ln.strip() and not ln.startswith("#")]
+                for line in fh:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        words.append(line)
+                    if len(words) >= MAX_WORDLIST_LINES:   # don't load a giant file whole
+                        break
 
         tool = self.detect_tool() if use_external else None
         results, method = [], "python"
@@ -256,8 +291,11 @@ class ContentDiscovery:
                     except OSError:
                         pass
         if not results:
+            self._truncated = False
             results = self._run_python(base_url, words, extensions)
             method = f"python ({len(words)} words)"
+            if getattr(self, "_truncated", False):
+                method += f" — capped at {MAX_PYTHON_REQUESTS} requests"
 
         # De-duplicate by path, most interesting status first.
         uniq = {}
