@@ -105,8 +105,8 @@ def run_autopilot_cli(args):
         for w in report["web"]:
             tech = ", ".join(w.get("tech") or []) or "-"
             waf = ", ".join(w.get("waf") or []) or "-"
-            console.print(f"    [cyan]{w['url']}[/cyan] [{w['status']}] "
-                          f"tech={tech} waf={waf}")
+            console.print(f"    [cyan]{ui.safe(w['url'])}[/cyan] [{w['status']}] "
+                          f"tech={ui.safe(tech)} waf={ui.safe(waf)}")
         crit_high = sum(1 for f in report["nuclei"] if f["severity"] in ("CRITICAL", "HIGH"))
         ui.info(f"Nuclei findings: {len(report['nuclei'])} ({crit_high} critical/high)")
         if report.get("ai_analysis"):

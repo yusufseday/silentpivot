@@ -17,6 +17,12 @@ import os
 import time
 import random
 
+import urllib3
+
+# fetch() sends verify=False (pentest targets routinely use self-signed certs), so the
+# matching warning is silenced here rather than in every calling module.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 # Realistic browser UAs, rotated in stealth mode so requests don't share one signature.
 _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -31,6 +37,13 @@ _USER_AGENTS = [
 _DEFAULT_UA = "Mozilla/5.0 (X11; Linux x86_64) SilentPivot/1.0"
 
 NORMAL, STEALTH, PASSIVE = "normal", "stealth", "passive"
+
+# Hard cap on how much of a response body we read. Recon never needs more, and a
+# hostile host (or a defensive tarpit) can otherwise stream data until we run out of
+# memory. Applied by fetch() below, which every HTTP module goes through.
+MAX_BODY_BYTES = 5_000_000
+
+
 
 
 class OpsecProfile:
@@ -134,6 +147,26 @@ class OpsecProfile:
         return ("Proxy applies to HTTP modules only — nmap sends its own packets and "
                 "would reveal your real IP. To proxy everything, launch the tool with "
                 "proxychains:  proxychains4 python silentpivot.py")
+
+    def fetch(self, session, url, **kwargs):
+        """GET with a bounded body. Returns a requests.Response whose .text/.content
+        hold at most MAX_BODY_BYTES, so a hostile host (or a defensive tarpit) can't
+        stream data until we run out of memory. Raises the usual requests exceptions."""
+        kwargs.setdefault("timeout", 10)
+        kwargs.setdefault("verify", False)     # pentest targets often use self-signed certs
+        resp = session.get(url, stream=True, **kwargs)
+        body = bytearray()
+        try:
+            for chunk in resp.iter_content(65536):
+                body.extend(chunk)
+                if len(body) >= MAX_BODY_BYTES:
+                    break
+        finally:
+            resp.close()
+        # Hand the capped bytes back to requests so .text / .content behave normally.
+        resp._content = bytes(body)
+        resp._content_consumed = True
+        return resp
 
     def apply_to_session(self, session):
         """Configure a requests.Session with the current proxy + user-agent."""

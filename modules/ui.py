@@ -3,11 +3,10 @@ Both the CLI and the interactive panel are fed from here (no duplicated code).""
 import os
 import sys
 import subprocess
-from urllib.parse import urlparse
 
 from rich.console import Console
 from rich.table import Table
-from rich.panel import Panel
+from rich.markup import escape as _escape
 
 # Prevent UTF-8 crashes on legacy Windows consoles (cp1252 etc.); skip if unsupported.
 try:
@@ -43,6 +42,20 @@ def print_banner():
     console.print(BANNER)
 
 
+def safe(value, dash="[dim]-[/dim]"):
+    """Escape target-controlled text before it is printed.
+
+    Everything we display from a scan — page titles, banners, headers, file-read
+    evidence, nuclei match strings — is written by the target. rich would otherwise
+    interpret '[red]' or '[link=file:///etc/passwd]' in that text as real markup, so a
+    hostile host could forge the operator's output or crash rendering with an unbalanced
+    tag. Escaping makes such content inert.
+    """
+    if value is None or value == "":
+        return dash
+    return _escape(str(value))
+
+
 def _worst_cve(cves):
     """Pick the most critical CVE: KEV first, then CVSS, then severity."""
     from modules.reporter import _worst_cve as wc
@@ -68,10 +81,11 @@ def print_summary_table(results, title="Scan Summary"):
             kev = "[bold red]ACTIVE[/]" if any(c.get("kev") for c in cves) else "[dim]-[/dim]"
         else:
             risk, kev = "[dim]-[/dim]", "[dim]-[/dim]"
+        # service/version come from the target's own banner — escape before rendering.
         table.add_row(
-            str(r.get("port", "?")),
-            r.get("service", "?"),
-            r.get("version", "?"),
+            safe(r.get("port"), "?"),
+            safe(r.get("service"), "?"),
+            safe(r.get("version"), "?"),
             str(len(cves)),
             risk,
             kev,
@@ -109,19 +123,10 @@ def cve_link(cve_id):
 
 
 def normalize_url(raw):
-    """Validate + normalize a user-entered URL. Returns a clean URL or None.
-    Guards against malformed input (spaces, stray '[', missing host) that would
-    otherwise throw a cryptic error deep inside urlparse."""
-    raw = (raw or "").strip()
-    if not raw or " " in raw or "[" in raw:
-        return None
-    if not raw.startswith(("http://", "https://")):
-        raw = "https://" + raw
-    try:
-        parsed = urlparse(raw)
-    except ValueError:
-        return None
-    return raw if parsed.netloc else None
+    """Validate + normalize a user-entered URL (thin wrapper over the shared validator,
+    kept here because every panel tool asks for URLs through the UI layer)."""
+    from modules import validators
+    return validators.valid_url(raw)
 
 
 def info(msg):

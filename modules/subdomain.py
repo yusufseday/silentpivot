@@ -21,6 +21,7 @@ import concurrent.futures
 import requests
 
 from modules.opsec import profile as opsec
+from modules import validators
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -77,6 +78,11 @@ class SubdomainScanner:
         """Deep flow: passive + external + active brute -> merge -> enrich (IP/HTTP)
         -> takeover check. Returns a rich list of subdomain dicts."""
         domain = self._clean_domain(domain)
+        if not domain:
+            self._tool = None
+            self._passive_counts = {}
+            self._finalize_stats([], set())
+            return []
 
         sub_sources = self._gather_passive(domain)          # {sub: set(source names)}
         # OPSEC passive mode: keep the OSINT sources, drop anything that touches the
@@ -137,8 +143,8 @@ class SubdomainScanner:
         for scheme in ("https", "http"):
             url = f"{scheme}://{host}"
             try:
-                r = self.session.get(url, timeout=timeout or self.http_timeout,
-                                     verify=False, allow_redirects=True)
+                r = opsec.fetch(self.session, url, timeout=timeout or self.http_timeout,
+                                allow_redirects=True)
                 return r.status_code, self._match_takeover(r.text[:8000]), url
             except requests.RequestException:
                 continue
@@ -298,8 +304,6 @@ class SubdomainScanner:
 
     @staticmethod
     def _clean_domain(domain):
-        domain = domain.strip().lower()
-        for prefix in ("http://", "https://"):
-            if domain.startswith(prefix):
-                domain = domain[len(prefix):]
-        return domain.split("/")[0].lstrip("*.")
+        """Normalized domain, or '' when the input isn't a usable domain (an IP, a
+        bare label or something with spaces/flags is not something to enumerate)."""
+        return validators.valid_domain(domain) or ""

@@ -10,6 +10,8 @@ import re
 import requests
 import urllib3
 
+from modules.opsec import profile as opsec
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Ports we treat as web, mapped to the scheme we try first.
@@ -67,9 +69,8 @@ class WebProber:
     def __init__(self, timeout=8):
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) SilentPivot/1.0",
-        })
+        # Proxy + user-agent come from the OPSEC profile, like every other HTTP module.
+        opsec.apply_to_session(self.session)
 
     def probe_host(self, host, ports=None):
         """Probe web ports on a host. Returns one dict per reachable web endpoint."""
@@ -97,9 +98,8 @@ class WebProber:
 
     def _probe_url(self, url):
         try:
-            resp = self.session.get(
-                url, timeout=self.timeout, verify=False, allow_redirects=True
-            )
+            resp = opsec.fetch(self.session, url, timeout=self.timeout,
+                               allow_redirects=True)
         except requests.RequestException:
             return None
 

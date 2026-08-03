@@ -3,6 +3,8 @@ Pure Python socket + thread pool; only attempts a TCP connect to the target."""
 import socket
 import concurrent.futures
 
+from modules import validators
+
 # Common service ports (default for a quick scan)
 COMMON_PORTS = {
     21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
@@ -50,16 +52,7 @@ class PortChecker:
 
     @staticmethod
     def parse_ports(spec):
-        """'22,80,443' or '1-1024' or 'top' -> list of ports."""
-        spec = (spec or "").strip().lower()
-        if not spec or spec == "top":
-            return None  # None -> COMMON_PORTS is used
-        ports = set()
-        for part in spec.split(","):
-            part = part.strip()
-            if "-" in part:
-                a, b = part.split("-", 1)
-                ports.update(range(int(a), int(b) + 1))
-            elif part.isdigit():
-                ports.add(int(part))
-        return sorted(p for p in ports if 0 < p <= 65535)
+        """'22,80,443' or '1-1024' or 'top' -> list of ports (None -> COMMON_PORTS).
+        Delegates to the shared validator, which tolerates malformed input instead of
+        raising and clamps oversized ranges."""
+        return validators.parse_ports(spec)

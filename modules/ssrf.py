@@ -91,8 +91,8 @@ class SSRFScanner:
         param, payload = target
         test_url = self._inject(self._base_url, param, payload)
         try:
-            r = self.session.get(test_url, timeout=self.timeout, verify=False,
-                                 allow_redirects=False)
+            r = opsec.fetch(self.session, test_url, timeout=self.timeout,
+                            allow_redirects=False)
         except requests.RequestException:
             return None
         hit = self._check(r.text, payload)

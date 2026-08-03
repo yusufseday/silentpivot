@@ -5,6 +5,7 @@ import ipaddress
 import functools
 
 from modules.opsec import profile as opsec
+from modules import validators
 
 # Single source of truth for scan-type labels (shared by panel, autopilot, CLI).
 SCAN_LABELS = {
@@ -67,6 +68,15 @@ class NetworkScanner:
         return _ipv6_available()
 
     def scan_target(self, target, scan_type="2"):
+        # python-nmap shlex-splits the host string, so an unvalidated target such as
+        # "-oN /tmp/x" would become nmap FLAGS. Validate before anything else.
+        clean = validators.valid_target(target)
+        if not clean:
+            print(f"[!] Invalid target: {target!r} — expected an IP, CIDR or hostname.")
+            self.scan_meta = {"ips": [], "scanned_ip": None, "invalid_target": True}
+            return []
+        target = clean
+
         # Passive mode sends nothing to the target — an active port scan is exactly
         # the kind of footprint it exists to avoid.
         if opsec.is_passive:

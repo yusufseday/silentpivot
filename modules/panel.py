@@ -24,6 +24,7 @@ from modules.ssrf import SSRFScanner
 from modules.autopilot import run_autopilot
 from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
 from modules import attack_map
+from modules import validators
 from modules import reporter
 
 
@@ -166,7 +167,7 @@ class CommandCenter:
                 ev += f" (+{len(tech['evidence']) - 3})"
             tid = (f"[link=https://attack.mitre.org/techniques/"
                    f"{tech['id'].replace('.', '/')}/]{tech['id']}[/link]")
-            t.add_row(tech["tactic"], tid, tech["name"], ev or "[dim]-[/dim]")
+            t.add_row(tech["tactic"], tid, tech["name"], ui.safe(ev))
         console.print(t)
 
         # Coverage line: which kill-chain stages we already touch.
@@ -266,8 +267,10 @@ class CommandCenter:
     def tool_autopilot(self):
         if self._blocked_by_passive("Autopilot"):
             return
-        target = Prompt.ask("Target IP/domain", default=self.last_target or "").strip()
+        target = validators.valid_target(Prompt.ask("Target IP/domain",
+                                                    default=self.last_target or ""))
         if not target:
+            ui.error("Invalid target — expected an IP, CIDR or hostname (e.g. 10.0.2.9).")
             return
         console.print("[1] Fast  [2] Standard  [3] Deep")
         scan_type = Prompt.ask("Nmap scan type", choices=["1", "2", "3"], default="2")
@@ -304,8 +307,9 @@ class CommandCenter:
     def tool_nmap(self):
         if self._blocked_by_passive("Nmap scanning"):
             return
-        target = Prompt.ask("Target IP/domain").strip()
+        target = validators.valid_target(Prompt.ask("Target IP/domain"))
         if not target:
+            ui.error("Invalid target — expected an IP, CIDR or hostname (e.g. 10.0.2.9).")
             return
         console.print("[1] Fast  [2] Standard  [3] Deep")
         scan_type = Prompt.ask("Scan type", choices=["1", "2", "3"], default="2")
@@ -364,12 +368,12 @@ class CommandCenter:
             waf = r.get("waf") or []
             url = r.get("url", "")
             t.add_row(
-                f"[link={url}]{url}[/link]" if url else "-",
+                f"[link={url}]{ui.safe(url)}[/link]" if url else "-",
                 f"[{code_style}]{code}[/]",
-                r.get("title") or "[dim]-[/dim]",
-                r.get("server") or "[dim]-[/dim]",
-                ", ".join(r.get("tech") or []) or "[dim]-[/dim]",
-                ("[bold magenta]" + ", ".join(waf) + "[/]") if waf else "[dim]-[/dim]",
+                ui.safe(r.get("title")),
+                ui.safe(r.get("server")),
+                ui.safe(", ".join(r.get("tech") or [])),
+                ("[bold magenta]" + ui.safe(", ".join(waf)) + "[/]") if waf else "[dim]-[/dim]",
             )
         console.print(t)
 
@@ -444,8 +448,9 @@ class CommandCenter:
             ui.print_summary_table(enriched)
 
     def tool_subdomain(self):
-        domain = Prompt.ask("Target domain (e.g. example.com)").strip()
+        domain = validators.valid_domain(Prompt.ask("Target domain (e.g. example.com)"))
         if not domain:
+            ui.error("Invalid domain — expected something like example.com.")
             return
         active = Confirm.ask("Include active DNS brute-force? (deeper, slower)", default=True)
         scanner = SubdomainScanner()
@@ -487,11 +492,11 @@ class CommandCenter:
             ip = r["ip"] if r["resolved"] else "[dim]unresolved[/dim]"
             origin = {"both": "[green]active+passive[/]", "active": "[yellow]active[/]",
                       "passive": "[cyan]passive[/]"}.get(r["origin"], r["origin"])
-            takeover = f"[bold red]{r['takeover']}[/]" if r.get("takeover") else "[dim]-[/dim]"
+            takeover = f"[bold red]{ui.safe(r['takeover'])}[/]" if r.get("takeover") else "[dim]-[/dim]"
             # Show the full URL as the visible text: terminals that support OSC-8 get a
             # real hyperlink, and the ones that don't still auto-detect the plain URL.
             url = r.get("url") or "https://" + r["host"]
-            t.add_row(f"[link={url}]{url}[/link]", ip, http, origin, takeover)
+            t.add_row(f"[link={url}]{ui.safe(url)}[/link]", ui.safe(ip), http, origin, takeover)
         console.print(t)
         takeovers = [r for r in results if r.get("takeover")]
         if takeovers:
@@ -505,8 +510,9 @@ class CommandCenter:
     def tool_portcheck(self):
         if self._blocked_by_passive("Port checking"):
             return
-        host = Prompt.ask("Target IP/host").strip()
+        host = validators.valid_target(Prompt.ask("Target IP/host"))
         if not host:
+            ui.error("Invalid host — expected an IP or hostname.")
             return
         spec = Prompt.ask("Ports ('top', '22,80,443' or '1-1024')", default="top")
         ports = PortChecker.parse_ports(spec)
@@ -525,7 +531,7 @@ class CommandCenter:
         t.add_column("Service")
         t.add_column("State")
         for r in results:
-            t.add_row(str(r["port"]), r["service"], "[green]OPEN[/green]")
+            t.add_row(str(r["port"]), ui.safe(r["service"]), "[green]OPEN[/green]")
         console.print(t)
         ui.success(f"{len(results)} open ports found.")
 
@@ -533,8 +539,9 @@ class CommandCenter:
         if self._blocked_by_passive("Web probing"):
             return
         default = self.last_target or ""
-        host = Prompt.ask("Target host/domain", default=default).strip()
+        host = validators.valid_target(Prompt.ask("Target host/domain", default=default))
         if not host:
+            ui.error("Invalid host — expected an IP or hostname.")
             return
 
         # If we scanned this host with nmap, probe exactly the open web ports found.
@@ -607,10 +614,10 @@ class CommandCenter:
             sv = f["severity"]
             t.add_row(
                 f"[{ui.SEVERITY_COLORS.get(sv, 'dim')}]{sv}[/]",
-                f["template_id"],
-                f["name"] or "[dim]-[/dim]",
-                f.get("matcher_name") or "[dim]-[/dim]",
-                f["matched_at"] or "[dim]-[/dim]",
+                ui.safe(f["template_id"]),
+                ui.safe(f["name"]),
+                ui.safe(f.get("matcher_name")),
+                ui.safe(f["matched_at"]),
             )
         console.print(t)
         crit_high = sum(1 for f in findings if f["severity"] in ("CRITICAL", "HIGH"))
@@ -648,7 +655,7 @@ class CommandCenter:
                 else:
                     exp = "[dim]-[/dim]"
                 t.add_row(
-                    str(r["port"]), r["service"], ui.cve_link(c["id"]),
+                    str(r["port"]), ui.safe(r["service"]), ui.cve_link(ui.safe(c["id"])),
                     f"[{ui.SEVERITY_COLORS.get(sev, 'dim')}]{c.get('cvss')} {sev}[/]",
                     epss_str,
                     "[bold red]ACTIVE[/]" if c.get("kev") else "[dim]-[/dim]",
@@ -719,8 +726,8 @@ class CommandCenter:
         t.add_column("Length", justify="right")
         for h in hits:
             code_style = "green" if h["status"] < 300 else "yellow"
-            t.add_row(f"[{code_style}]{h['status']}[/]", h["technique"],
-                      h["method"], str(h["length"]))
+            t.add_row(f"[{code_style}]{h['status']}[/]", ui.safe(h["technique"]),
+                      ui.safe(h["method"]), str(h["length"]))
         console.print(t)
         ui.warn(f"{len(hits)} potential bypass(es) — verify manually (a 200 can still "
                 f"be a login/redirect page).")
@@ -747,9 +754,9 @@ class CommandCenter:
             t.add_column("Source")
             conf_color = {"high": "bold red", "medium": "yellow", "low": "dim"}
             for s in secrets:
-                t.add_row(s["type"], s["value"],
+                t.add_row(ui.safe(s["type"]), ui.safe(s["value"]),
                           f"[{conf_color.get(s['confidence'], 'dim')}]{s['confidence']}[/]",
-                          s["source"])
+                          ui.safe(s["source"]))
             console.print(t)
 
         if exposed:
@@ -759,7 +766,7 @@ class CommandCenter:
             t.add_column("Confidence")
             for e in exposed:
                 cc = "bold red" if e["confidence"] == "high" else "yellow"
-                t.add_row(e["path"], str(e["size"]), f"[{cc}]{e['confidence']}[/]")
+                t.add_row(ui.safe(e["path"]), str(e["size"]), f"[{cc}]{e['confidence']}[/]")
             console.print(t)
 
         if not secrets and not exposed:
@@ -796,11 +803,13 @@ class CommandCenter:
         t.add_column("Payload")
         for h in hits:
             payload = h["payload"] if len(h["payload"]) < 45 else h["payload"][:42] + "..."
-            t.add_row(h["param"], h["signature"], str(h["status"]), payload)
+            t.add_row(ui.safe(h["param"]), ui.safe(h["signature"]), str(h["status"]),
+                      ui.safe(payload))
         console.print(t)
         ui.error(f"⚠ {len(hits)} confirmed file-read(s) — evidence found in the response.")
         for h in hits[:3]:
-            console.print(f"    [dim]{h['param']}:[/dim] [green]{h['evidence']}[/green]")
+            console.print(f"    [dim]{ui.safe(h['param'])}:[/dim] "
+                          f"[green]{ui.safe(h['evidence'])}[/green]")
 
     def _ai_payloads(self, kind):
         """Shared AI-payload helper for the active modules (ssrf / lfi / 403).
@@ -843,7 +852,8 @@ class CommandCenter:
         t.add_column("Status", justify="right")
         t.add_column("Evidence")
         for h in hits:
-            t.add_row(h["param"], h["signature"], str(h["status"]), h["evidence"])
+            t.add_row(ui.safe(h["param"]), ui.safe(h["signature"]), str(h["status"]),
+                      ui.safe(h["evidence"]))
         console.print(t)
         ui.error(f"⚠ {len(hits)} SSRF hit(s) — internal/metadata content reflected!")
 
@@ -862,7 +872,7 @@ class CommandCenter:
         for i, f in enumerate(files[:20], 1):
             # Clickable file link on the name — click opens the report directly.
             abs_f = os.path.abspath(f).replace("\\", "/")
-            name = f"[link=file:///{abs_f.lstrip('/')}]{os.path.basename(f)}[/link]"
+            name = f"[link=file:///{abs_f.lstrip('/')}]{ui.safe(os.path.basename(f))}[/link]"
             t.add_row(str(i), name, f"{os.path.getsize(f)} B")
         console.print(t)
         console.print("[dim]Enter a # to open (HTML opens in browser), or e<#> to "

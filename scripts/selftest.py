@@ -160,6 +160,24 @@ def c_ai_payload_parse():
     return len(got) == 2, f"parsed {got} (bad input -> {SilentAI._parse_payload_list('none', 12)})"
 
 
+def c_validators():
+    from modules import validators as v
+    checks = [
+        # (result, expected, label)
+        (v.valid_target("10.0.2.9"), "10.0.2.9", "ip ok"),
+        (v.valid_target("-oN /tmp/x"), None, "nmap flag injection rejected"),
+        (v.valid_target("a b"), None, "whitespace rejected"),
+        (v.valid_url("javascript:alert(1)"), None, "js scheme rejected"),
+        (v.valid_url("x.com"), "https://x.com", "bare host normalized"),
+        (v.valid_domain("10.0.2.9"), None, "ip is not a domain"),
+        (v.parse_ports("a-b"), [], "malformed range survives"),
+        (v.parse_ports("top"), None, "'top' -> default"),
+        (len(v.parse_ports("1-99999999") or []), 65535, "huge range clamped"),
+    ]
+    bad = [label for got, want, label in checks if got != want]
+    return not bad, ("all input checks pass" if not bad else f"FAILED: {bad}")
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -176,6 +194,7 @@ def main():
     check("Path traversal signatures", c_pathtraversal)
     check("SSRF signatures", c_ssrf)
     check("AI payload JSON parse", c_ai_payload_parse)
+    check("Input validation", c_validators)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)

@@ -72,7 +72,8 @@ class LeakFinder:
     # ---------- helpers ----------
     def _get(self, url):
         try:
-            return self.session.get(url, timeout=self.timeout, verify=False, allow_redirects=True)
+            return opsec.fetch(self.session, url, timeout=self.timeout,
+                               allow_redirects=True)
         except requests.RequestException:
             return None
 
