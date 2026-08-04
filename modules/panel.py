@@ -720,10 +720,16 @@ class CommandCenter:
             ui.success(f"Baseline {result['baseline']} — no bypass found "
                        f"(access control looks solid).")
             return
-        self.last_vulns.append({"type": "403-bypass", "url": url,
-                                "hits": [{"technique": h["technique"], "status": h["status"]}
-                                         for h in hits[:5]]})
-        t = Table(title=f"{url} — Bypass Hits (baseline {result['baseline']})")
+        # TRACE-style findings are weaknesses, not access bypasses — count them apart
+        # so the summary never claims a bypass that didn't happen.
+        real = [h for h in hits if h.get("bypass", True)]
+        other = [h for h in hits if not h.get("bypass", True)]
+        if real:
+            self.last_vulns.append({"type": "403-bypass", "url": url,
+                                    "hits": [{"technique": h["technique"],
+                                              "status": h["status"]} for h in real[:5]]})
+        title = "Bypass Hits" if real else "Findings (no bypass)"
+        t = Table(title=f"{url} — {title} (baseline {result['baseline']})")
         t.add_column("Status", justify="right")
         t.add_column("Technique", style="cyan")
         t.add_column("Method")
@@ -733,8 +739,12 @@ class CommandCenter:
             t.add_row(f"[{code_style}]{h['status']}[/]", ui.safe(h["technique"]),
                       ui.safe(h["method"]), str(h["length"]))
         console.print(t)
-        ui.warn(f"{len(hits)} potential bypass(es) — verify manually (a 200 can still "
-                f"be a login/redirect page).")
+        if real:
+            ui.warn(f"{len(real)} potential bypass(es) — verify manually (a 200 can "
+                    f"still be a login/redirect page).")
+        else:
+            ui.success(f"Baseline {result['baseline']} — no bypass found. "
+                       f"[dim]{len(other)} related weakness(es) listed above.[/dim]")
 
     def tool_leak(self):
         if self._blocked_by_passive("Leak scanning"):

@@ -104,9 +104,10 @@ class Bypass403:
         # it's reported as its own weakness rather than as a bypass.
         if method == "TRACE":
             return {"technique": "TRACE enabled (request echo, not resource access)",
-                    "method": method, "url": url, "status": status, "length": length}
+                    "method": method, "url": url, "status": status, "length": length,
+                    "bypass": False}
         return {"technique": technique, "method": method, "url": url,
-                "status": status, "length": length}
+                "status": status, "length": length, "bypass": True}
 
     def baseline_status(self, url):
         """Status code of a plain GET — lets the caller check whether bypassing is even
