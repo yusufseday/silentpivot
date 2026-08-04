@@ -245,8 +245,18 @@ class ContentDiscovery:
             "redirect": r.headers.get("Location", ""),
         }
 
+    @staticmethod
+    def plan_size(words, extensions):
+        """How many requests a Python run would need — lets the caller warn *before*
+        starting instead of silently testing only part of the list."""
+        total = 0
+        for w in words:
+            total += 1 if ("." in w or "/" in w) else len(extensions)
+        return total
+
     def _run_python(self, base_url, words, extensions):
         baseline = self._baseline(base_url)
+        planned = self.plan_size(words, extensions)
         seen, tasks = set(), []
         truncated = False
         for w in words:
@@ -265,6 +275,8 @@ class ContentDiscovery:
             if truncated:
                 break
         self._truncated = truncated
+        self._tested = len(tasks)
+        self._planned = planned
 
         results = []
         with concurrent.futures.ThreadPoolExecutor(
@@ -286,6 +298,7 @@ class ContentDiscovery:
 
         extensions = extensions if extensions is not None else DEFAULT_EXTENSIONS
         words = BUILTIN_WORDLIST
+        wordlist_truncated = False
         if wordlist_path and os.path.isfile(wordlist_path):
             words = []
             with open(wordlist_path, encoding="utf-8", errors="ignore") as fh:
@@ -294,6 +307,9 @@ class ContentDiscovery:
                     if line and not line.startswith("#"):
                         words.append(line)
                     if len(words) >= MAX_WORDLIST_LINES:   # don't load a giant file whole
+                        # Anything after this point is never tested — the caller must
+                        # say so, otherwise "nothing found" reads as "nothing is there".
+                        wordlist_truncated = any(ln.strip() for ln in fh)
                         break
 
         tool = self.detect_tool() if use_external else None
@@ -321,14 +337,22 @@ class ContentDiscovery:
             self._truncated = False
             results = self._run_python(base_url, words, extensions)
             method = f"python ({len(words)} words)"
-            if getattr(self, "_truncated", False):
-                method += f" — capped at {MAX_PYTHON_REQUESTS} requests"
 
         # De-duplicate by path, most interesting status first.
         uniq = {}
         for r in results:
             uniq.setdefault(r["path"], r)
         results = sorted(uniq.values(), key=lambda r: (r["status"], r["path"]))
-        self.stats = {"method": method, "total": len(results),
-                      "wordlist": len(words) if method.startswith("python") else None}
+        # Coverage is reported explicitly: a truncated run that finds nothing must not
+        # be mistaken for "there is nothing here".
+        self.stats = {
+            "method": method,
+            "total": len(results),
+            "wordlist": len(words),
+            "wordlist_truncated": wordlist_truncated,
+            "tested": getattr(self, "_tested", None),
+            "planned": getattr(self, "_planned", None),
+            "truncated": bool(getattr(self, "_truncated", False)) or wordlist_truncated,
+            "complete": not (getattr(self, "_truncated", False) or wordlist_truncated),
+        }
         return results

@@ -22,6 +22,7 @@ from modules.leakfinder import LeakFinder
 from modules.pathtraversal import PathTraversal
 from modules.ssrf import SSRFScanner
 from modules.contentdisco import ContentDiscovery
+from modules import contentdisco
 from modules.autopilot import run_autopilot
 from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
 from modules import attack_map
@@ -871,6 +872,19 @@ class CommandCenter:
         console.print(t)
         ui.error(f"⚠ {len(hits)} SSRF hit(s) — internal/metadata content reflected!")
 
+    @staticmethod
+    def _report_coverage(stats):
+        """State plainly whether the wordlist was fully covered. A capped run that
+        found nothing must never read as 'the target is clean'."""
+        if stats.get("complete", True):
+            return
+        tested, planned = stats.get("tested"), stats.get("planned")
+        detail = (f"{tested:,} of {planned:,} candidates tested"
+                  if tested and planned else "the wordlist was truncated")
+        ui.warn(f"INCOMPLETE SCAN — {detail}. Untested paths may still exist.")
+        console.print("[dim]    Use ffuf/gobuster (sudo apt install ffuf) or a smaller "
+                      "wordlist for full coverage.[/dim]")
+
     def tool_content(self):
         if self._blocked_by_passive("Content discovery"):
             return
@@ -889,13 +903,39 @@ class CommandCenter:
             wl = None
 
         scanner = ContentDiscovery()
-        engine = scanner.detect_tool() or "built-in python fuzzer"
+        tool = scanner.detect_tool()
+
+        # Without an external tool the Python fuzzer is capped, so warn BEFORE the run:
+        # a partial scan that reports "nothing found" would be misleading.
+        if not tool and wl:
+            try:
+                with open(wl, encoding="utf-8", errors="ignore") as fh:
+                    n_words = sum(1 for ln in fh if ln.strip() and not ln.startswith("#"))
+                planned = n_words * len(contentdisco.DEFAULT_EXTENSIONS)
+                if planned > contentdisco.MAX_PYTHON_REQUESTS:
+                    ui.warn(f"This wordlist needs ~{planned:,} requests but the built-in "
+                            f"fuzzer stops at {contentdisco.MAX_PYTHON_REQUESTS:,} — the "
+                            f"scan would be PARTIAL.")
+                    console.print("[dim]    Install ffuf for full coverage: "
+                                  "sudo apt install ffuf[/dim]")
+                    if not Confirm.ask("Run the partial scan anyway?", default=False):
+                        return
+            except OSError:
+                pass
+
+        engine = tool or "built-in python fuzzer"
         ui.info(f"Discovering content on {url} via {engine} — this can take a while...")
         results = scanner.run(url, wordlist_path=wl)
         self.last_content = results
-        ui.info(f"Engine: [bold]{scanner.stats.get('method')}[/bold]")
+        st = scanner.stats
+        ui.info(f"Engine: [bold]{st.get('method')}[/bold]")
+        self._report_coverage(st)
         if not results:
-            ui.success("No extra content discovered.")
+            if st.get("complete"):
+                ui.success("No extra content discovered.")
+            else:
+                ui.warn("Nothing found in the part that was scanned — the scan was "
+                        "incomplete, so this does NOT mean the target is clean.")
             return
 
         t = Table(title=f"{url} — Discovered Content ({len(results)})")
@@ -916,7 +956,11 @@ class CommandCenter:
         if forbidden:
             ui.warn(f"{len(forbidden)} forbidden path(s) — try [9] 403 Bypass on: "
                     f"{ui.safe(', '.join(forbidden[:3]))}")
-        ui.success(f"{len(results)} paths discovered.")
+        if st.get("complete", True):
+            ui.success(f"{len(results)} paths discovered.")
+        else:
+            ui.warn(f"{len(results)} paths discovered so far — scan was incomplete "
+                    f"(see the coverage note above).")
 
     def tool_reports(self):
         files = sorted(glob.glob(os.path.join("data", "*.md")) +
