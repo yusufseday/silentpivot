@@ -37,6 +37,7 @@ class CommandCenter:
         self.last_scan_type = None
         self.last_results = None  # findings enriched with CVE data
         self.last_nuclei = None   # last nuclei findings
+        self.last_nuclei_meta = {}
         self.last_web = []        # last web-probe fingerprints
         self.last_scan_meta = {}  # multi-IP / protected-target context
         # Extra recon state so the co-pilot can reason after ANY tool, not just nmap.
@@ -590,6 +591,7 @@ class CommandCenter:
             return
         self.last_nuclei = findings
         meta = scanner.meta
+        self.last_nuclei_meta = meta
         tmpl = meta.get("templates")
 
         # Distinguish a genuine "no findings" from an error / missing templates.
@@ -687,6 +689,7 @@ class CommandCenter:
             self.last_target, SCAN_LABELS.get(self.last_scan_type, "?"),
             self.last_results, analysis, scan_meta=self.last_scan_meta,
             web=self.last_web, nuclei=self.last_nuclei or [],
+            nuclei_meta=self.last_nuclei_meta,
             attack=self.last_attack or self._map_attack(),
             attack_story=self.last_attack_story,
         )

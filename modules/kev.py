@@ -65,6 +65,3 @@ class KevCatalog:
     def lookup(self, cve_id):
         """Return a detail dict if the CVE is actively exploited, else None."""
         return self._load().get(cve_id)
-
-    def is_available(self):
-        return bool(self._load())

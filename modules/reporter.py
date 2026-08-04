@@ -143,9 +143,13 @@ def to_markdown(report):
             f"{s}: {counts[s]}" for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
             if counts.get(s)
         )
+        # Scan coverage: how many templates actually ran proves the scan was real,
+        # the same honesty the content-discovery section applies to its wordlist.
+        tmpl = (report.get("nuclei_meta") or {}).get("templates")
+        coverage = f" · {tmpl:,} templates ran" if tmpl else ""
         lines += [
             "", "## Nuclei Findings", "",
-            f"_{len(report['nuclei'])} findings — {summary}_", "",
+            f"_{len(report['nuclei'])} findings — {summary}{coverage}_", "",
             "| Severity | Template | Name | Detail | Matched At |",
             "|----------|----------|------|--------|------------|",
         ]
@@ -375,7 +379,9 @@ def to_html(report):
         nrows = [[_sev_badge(f.get("severity")), f'<span class="mono">{esc(f.get("template_id") or "")}</span>',
                   esc(f.get("name") or "—"), esc(f.get("matcher_name") or "—"),
                   f'<span class="mono">{_html_a(f.get("matched_at") or "—")}</span>'] for f in nuclei]
-        nuclei_html = (f'<h2 class="sec">Nuclei Findings ({len(nuclei)})</h2>'
+        tmpl = (report.get("nuclei_meta") or {}).get("templates")
+        cov = f' <span style="font-weight:400;font-size:13px">· {tmpl:,} templates ran</span>' if tmpl else ""
+        nuclei_html = (f'<h2 class="sec">Nuclei Findings ({len(nuclei)}){cov}</h2>'
                        + _html_table(["Severity", "Template", "Name", "Detail", "Matched At"], nrows))
 
     # MITRE ATT&CK
