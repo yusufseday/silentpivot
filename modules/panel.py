@@ -2,6 +2,7 @@
 Launched when the program is run without arguments; drives every tool from one menu."""
 import os
 import glob
+from urllib.parse import urlparse
 
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
@@ -28,6 +29,16 @@ from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
 from modules import attack_map
 from modules import validators
 from modules import reporter
+from modules.tasktree import TaskTree, OPEN, DONE, NO_RESULT
+
+
+# Tools whose output should feed the persistent task tree. Kept as one explicit list
+# (rather than scattering _sync_tree() calls across ten methods) so it's obvious at a
+# glance which tools are tracked and none can be silently missed.
+_TREE_SYNC_ACTIONS = {
+    "tool_autopilot", "tool_nmap", "tool_subdomain", "tool_webprobe", "tool_nuclei",
+    "tool_leak", "tool_pathtraversal", "tool_ssrf", "tool_bypass403", "tool_content",
+}
 
 
 class CommandCenter:
@@ -48,6 +59,7 @@ class CommandCenter:
         self.last_content = []    # discovered paths
         self.last_attack = []     # mapped ATT&CK techniques
         self.last_attack_story = None
+        self.tree = None          # persistent per-target TaskTree (see _sync_tree)
 
     # ---------- Menu loop ----------
     def run(self):
@@ -70,6 +82,12 @@ class CommandCenter:
                 continue
             try:
                 getattr(self, action)()
+                # Every finding-producing tool feeds the persistent task tree here,
+                # in one place, so no tool can forget to — and a tool that only reads
+                # state (co-pilot, ATT&CK map, task tree itself) just no-ops (nothing
+                # new to ingest, or it already synced internally).
+                if action in _TREE_SYNC_ACTIONS:
+                    self._sync_tree()
             except KeyboardInterrupt:
                 ui.warn("Cancelled, returning to menu.")
             except Exception as e:
@@ -80,8 +98,8 @@ class CommandCenter:
     def _ask_choice(self):
         """Compact prompt: one dim hint line (+ status only when there's state),
         instead of redrawing the full menu after every action."""
-        console.print("[dim]A auto · ? co-pilot · 1-9/L/P/S tools · M att&ck · "
-                      "C content · O opsec · h menu · 0 exit[/dim]")
+        console.print("[dim]A auto · ? co-pilot · 1-9/L/P/S tools · C content · "
+                      "T tasks · M att&ck · O opsec · h menu · 0 exit[/dim]")
         if self.last_results or self.last_target or opsec.mode != NORMAL or opsec.proxy:
             console.print(f"[dim]{self._status_line()}[/dim]")
         return Prompt.ask("[bold cyan]›[/bold cyan]", default="0").strip().lower()
@@ -102,6 +120,7 @@ class CommandCenter:
         "p": "tool_pathtraversal",
         "s": "tool_ssrf",
         "c": "tool_content",
+        "t": "tool_tasktree",
         "m": "tool_attack_map",
         "o": "tool_opsec",
         "h": "help",
@@ -129,6 +148,7 @@ class CommandCenter:
         t.add_row("S", "SSRF Scan               [dim](reflected SSRF + AI payloads)[/dim]")
         t.add_row("C", "Content Discovery       [dim](hidden paths, panels, backups)[/dim]")
         t.add_row("", "")
+        t.add_row("T", "[bold]Task Tree[/bold]               [dim](persistent leads — survives restarts)[/dim]")
         t.add_row("M", "[bold]ATT&CK Map[/bold]              [dim](techniques + AI kill-chain narrative)[/dim]")
         t.add_row("O", "OPSEC Profile           [dim](stealth / passive / proxy)[/dim]")
         t.add_row("h", "[dim]Show this menu again[/dim]")
@@ -147,6 +167,81 @@ class CommandCenter:
                 f"[dim]| {len(self.last_results)} open ports[/dim]")
 
     # ---------- Tools ----------
+    def _remember_target(self, host_or_url):
+        """Set last_target from a host or URL, normalized to a bare host. Every tool
+        that can run standalone (without nmap having run first) calls this, so its
+        findings always land in the SAME per-target task tree — a URL and a bare
+        hostname for the same box must not fragment into two separate tree files."""
+        if self.last_target:
+            return
+        host = urlparse(host_or_url).hostname if "://" in host_or_url else host_or_url
+        self.last_target = host or host_or_url
+
+    def _sync_tree(self):
+        """Feed everything gathered this session into the persistent per-target task
+        tree and save it. Called after every tool that can produce a finding, so the
+        tree is never more than one action stale — and survives closing the tool."""
+        if not self.last_target:
+            return None
+        if self.tree is None or self.tree.target != self.last_target:
+            self.tree = TaskTree(self.last_target)
+        self.tree.ingest(
+            findings=self.last_results or [], nuclei=self.last_nuclei or [],
+            web=self.last_web, subdomains=self.last_subdomains,
+            leak=self.last_leak, vulns=self.last_vulns, content=self.last_content,
+        )
+        self.tree.save()
+        return self.tree
+
+    def tool_tasktree(self):
+        target = validators.valid_target(
+            Prompt.ask("Target (blank = current)", default=self.last_target or ""))
+        if not target:
+            saved = TaskTree.list_engagements()
+            if not saved:
+                ui.warn("No engagement history yet — run some recon first.")
+                return
+            ui.error(f"Invalid or missing target. Known engagements: {', '.join(saved)}")
+            return
+        self.last_target = self.last_target or target
+        tree = self.tree if (self.tree and self.tree.target == target) else TaskTree(target)
+        self.tree = tree
+        self._sync_tree()
+
+        summary = tree.summary()
+        console.print(RichPanel.fit(
+            f"[bold]{target}[/bold] — [green]{summary[DONE]} done[/] · "
+            f"[yellow]{summary[OPEN]} open[/] · [dim]{summary[NO_RESULT]} no-result[/] "
+            f"[dim](started {tree.created[:10]})[/dim]"))
+
+        open_leads = tree.open_leads()
+        if not open_leads:
+            ui.success("No open leads — everything found so far is resolved or noted.")
+        else:
+            t = Table(title="Open Leads (highest priority first)")
+            t.add_column("ID", style="dim")
+            t.add_column("Lead", style="cyan")
+            t.add_column("Evidence")
+            t.add_column("Seen", justify="right")
+            for lead in open_leads:
+                t.add_row(lead["id"], ui.safe(lead["title"]), ui.safe(lead["evidence"]),
+                          str(lead["seen"]))
+            console.print(t)
+
+        console.print("[dim]Enter a lead ID to mark it: d=done, n=no-result "
+                      "(blank to skip)[/dim]")
+        sel = Prompt.ask("Lead ID", default="").strip()
+        if not sel:
+            return
+        lead_id = tree.find(sel)
+        if not lead_id:
+            ui.error("No unique lead matches that ID.")
+            return
+        status = Prompt.ask("Mark as", choices=["d", "n"], default="d")
+        note = Prompt.ask("Note (optional)", default="").strip()
+        tree.set_status(lead_id, DONE if status == "d" else NO_RESULT, note=note or None)
+        ui.success(f"Lead {lead_id} marked {'done' if status == 'd' else 'no-result'}.")
+
     def _map_attack(self):
         """Map everything gathered this session into ATT&CK techniques."""
         return attack_map.map_findings(
@@ -252,6 +347,18 @@ class CommandCenter:
             }
         if self.last_vulns:
             extra["confirmed_vulns"] = self.last_vulns[-10:]
+
+        # Task tree: what's already been resolved (so the co-pilot doesn't propose it
+        # again) and what's still open — including leads from a PRIOR session that
+        # in-memory state above doesn't cover, since the tree survives restarts.
+        tree = self._sync_tree()
+        if tree:
+            done = [l for l in tree.leads.values() if l["status"] != OPEN]
+            if done:
+                extra["already_handled"] = [f"{l['title']} ({l['status']})" for l in done][:20]
+            open_leads = tree.open_leads()
+            if open_leads:
+                extra["untried_leads"] = [l["title"] for l in open_leads][:20]
 
         if not any([self.last_results, self.last_nuclei, self.last_web, extra]):
             ui.warn("Run any recon first (e.g. [1] Nmap, [2] Subdomain, [4] Web Probe, "
@@ -549,6 +656,7 @@ class CommandCenter:
         if not host:
             ui.error("Invalid host — expected an IP or hostname.")
             return
+        self._remember_target(host)
 
         # If we scanned this host with nmap, probe exactly the open web ports found.
         ports = None
@@ -703,6 +811,7 @@ class CommandCenter:
         if not url:
             ui.error("Invalid URL — enter something like http://host/admin")
             return
+        self._remember_target(url)
         # Check first, ask later: no point generating payloads for a URL that isn't
         # actually forbidden.
         scanner = Bypass403()
@@ -761,7 +870,7 @@ class CommandCenter:
         ui.info(f"Hunting for secrets and exposed files on {url} ...")
         result = LeakFinder().run(url)
         self.last_leak = result
-        self.last_target = self.last_target or url
+        self._remember_target(url)
         secrets, exposed = result["secrets"], result["exposed"]
 
         if secrets:
@@ -801,6 +910,7 @@ class CommandCenter:
         if not url:
             ui.error("Invalid URL — enter something like http://host/path?param=x")
             return
+        self._remember_target(url)
         extra = self._ai_payloads("path traversal / LFI")
         ui.info(f"Fuzzing {url} for path traversal / LFI ...")
         result = PathTraversal().run(url, extra_payloads=extra)
@@ -853,6 +963,7 @@ class CommandCenter:
         if not url:
             ui.error("Invalid URL — enter something like http://host/path?param=x")
             return
+        self._remember_target(url)
         extra = self._ai_payloads("ssrf")
         ui.info(f"Scanning {url} for reflected SSRF ...")
         result = SSRFScanner().run(url, extra_payloads=extra)
@@ -900,6 +1011,7 @@ class CommandCenter:
         if not url:
             ui.error("Invalid URL — enter something like http://host")
             return
+        self._remember_target(url)
         wl = Prompt.ask("Wordlist path (blank = auto)", default="").strip() or None
         if wl and not os.path.isfile(wl):
             ui.warn(f"Wordlist not found: {wl} — using the built-in list.")

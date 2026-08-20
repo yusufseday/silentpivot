@@ -35,7 +35,10 @@ _PAYLOADS = [
 
 # Evidence signatures — a match is proof, not a guess.
 _SIGNATURES = [
-    ("Linux /etc/passwd", re.compile(r"root:.*?:0:0:")),
+    # Bounded gap: a real /etc/passwd root line is well under 80 chars. An unbounded
+    # `.*?` here is O(n^2) against a hostile/huge response full of "root:" substrings
+    # (each becomes a backtracking restart point) — this caps the scan per restart.
+    ("Linux /etc/passwd", re.compile(r"root:.{0,80}?:0:0:")),
     ("Windows win.ini", re.compile(r"(?i)for 16-bit app support|\[fonts\]|\[extensions\]")),
 ]
 

@@ -45,7 +45,10 @@ _EXPOSED_PATHS = [
     ("/.git/config", r"\[core\]|repositoryformatversion"),
     ("/.git/HEAD", r"ref:\s*refs/"),
     ("/.env", r"(?m)^[A-Z0-9_]{2,}="),
-    ("/.htpasswd", r"[^:\s]+:[^:\s]+"),
+    # Bounded (real htpasswd fields are short): unbounded `[^:\s]+` on both sides has
+    # no anchor, so a huge colon-free body makes re.search retry the full backtrack
+    # at every start position — O(n^2).
+    ("/.htpasswd", r"[^:\s]{1,64}:[^:\s]{1,64}"),
     ("/.svn/entries", r"svn|^\d+$"),
     ("/.DS_Store", r"Bud1|\x00"),
     ("/server-status", r"Apache Server Status"),
@@ -94,7 +97,10 @@ class LeakFinder:
 
         # collect same-origin JS files referenced by the page
         js = set()
-        for m in re.finditer(r'<script[^>]+src=["\']([^"\']+)["\']', resp.text, re.I):
+        # [^>]{1,500} is bounded — a real <script> tag's attribute list is short, and
+        # an unbounded `[^>]+` is O(n^2) against a hostile/huge body full of unclosed
+        # "<script" occurrences (each is a backtracking restart point).
+        for m in re.finditer(r'<script[^>]{1,500}src=["\']([^"\']{1,2000})["\']', resp.text, re.I):
             ju = urljoin(url, m.group(1))
             if urlparse(ju).netloc == origin.netloc:
                 js.add(ju)

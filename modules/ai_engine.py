@@ -1,5 +1,4 @@
 import os
-import re
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -148,6 +147,10 @@ class SilentAI:
           direct. Do NOT claim anything is confirmed vulnerable without evidence.
         - Only mention a WAF/CDN if one appears in the data above; do not speculate
           about defences that were not observed.
+        - 'already_handled' lists leads the operator already resolved (possibly in a
+          past session) — do NOT suggest these again. 'untried_leads' are open leads
+          from the engagement history that may not appear elsewhere above — prioritize
+          surfacing these if they're not already covered by your other suggestions.
         {TOOL_ACCURACY_RULE}
 
         Output concise Markdown (max ~8 concrete moves):
@@ -205,11 +208,15 @@ class SilentAI:
         """Safely pull a JSON string-array out of the model's reply."""
         if not raw:
             return []
-        m = re.search(r"\[.*\]", raw, re.DOTALL)
-        if not m:
+        # str.find/rfind instead of a `\[.*\]` regex: a regex retried at every "["
+        # position is O(n^2) against a huge/malformed reply (e.g. many "[" with no
+        # closing "]"); a single forward/backward scan is O(n) regardless of content.
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start == -1 or end == -1 or end < start:
             return []
         try:
-            arr = json.loads(m.group(0))
+            arr = json.loads(raw[start:end + 1])
         except ValueError:
             return []
         out = [x.strip() for x in arr

@@ -21,7 +21,10 @@ WEB_PORTS = {
     443: "https", 8443: "https", 4443: "https",
 }
 
-_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+# Both groups are bounded — a real <title> tag and its content are short, and an
+# unbounded `[^>]*`/`.*?` here is O(n^2) against a huge/hostile body with many
+# unclosed "<title" occurrences (each is a backtracking restart point).
+_TITLE_RE = re.compile(r"<title[^>]{0,200}?>(.{0,500}?)</title>", re.IGNORECASE | re.DOTALL)
 
 # Technology signatures. Each: name -> {headers, cookies, body}.
 # headers: {header_name: regex}, cookies: [cookie_name...], body: [regex...]

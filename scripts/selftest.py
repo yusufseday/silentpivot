@@ -197,6 +197,84 @@ def c_contentdisco():
     return ok, f"ffuf+gobuster parsers OK | {len(BUILTIN_WORDLIST)} builtin words | tool: {tool}"
 
 
+def c_tasktree():
+    import shutil
+    from modules.tasktree import TaskTree, DONE
+    test_dir = os.path.join("data", "engagements")
+    had_dir = os.path.isdir(test_dir)
+    t = TaskTree("_selftest_target")
+    t.ingest(nuclei=[{"template_id": "CVE-X", "name": "Test Finding",
+                      "severity": "CRITICAL", "matched_at": "h:1"}])
+    n1 = len(t.leads)
+    t.save()
+    lead_id = next(iter(t.leads))
+    t.set_status(lead_id, DONE, note="tested")   # set_status persists on its own now
+
+    # Reload fresh — must survive a "restart".
+    t2 = TaskTree("_selftest_target")
+    persisted = t2.leads.get(lead_id, {}).get("status") == DONE
+
+    # Re-ingest the same finding — must not duplicate or reopen the done lead.
+    t2.ingest(nuclei=[{"template_id": "CVE-X", "name": "Test Finding",
+                       "severity": "CRITICAL", "matched_at": "h:1"}])
+    idempotent = len(t2.leads) == n1 and t2.leads[lead_id]["status"] == DONE
+
+    # Cleanup: remove only the file we created, not the whole directory.
+    try:
+        os.remove(t.path)
+        if not had_dir and not os.listdir(test_dir):
+            os.rmdir(test_dir)
+    except OSError:
+        pass
+
+    ok = n1 == 1 and persisted and idempotent
+    return ok, f"1 lead created, persisted across reload: {persisted}, rescan idempotent: {idempotent}"
+
+
+def c_redos_guard():
+    """Adversarial-input timing guard for the regexes that scan raw target/AI
+    output. These three previously exhibited O(n^2) backtracking (multi-minute
+    hangs on hostile input) before being bounded — this pins that fix."""
+    import re
+    import time
+    from modules.pathtraversal import _SIGNATURES
+    from modules.webprobe import _TITLE_RE
+    from modules.ai_engine import SilentAI
+    from modules.leakfinder import _EXPOSED_PATHS
+
+    budget = 5.0
+    cases = []
+
+    t0 = time.time()
+    evil = "root:" * 500000
+    for _name, rx in _SIGNATURES:
+        rx.search(evil)
+    cases.append(("pathtraversal /etc/passwd signature", time.time() - t0))
+
+    t0 = time.time()
+    _TITLE_RE.search("<title " + "a=1 " * 200000)
+    _TITLE_RE.search("<title" * 200000)
+    cases.append(("webprobe title regex", time.time() - t0))
+
+    t0 = time.time()
+    SilentAI._parse_payload_list("text " + "[" * 2000000, 12)
+    cases.append(("ai_engine payload bracket scan", time.time() - t0))
+
+    script_rx = re.compile(r'<script[^>]{1,500}src=["\']([^"\']{1,2000})["\']', re.I)
+    t0 = time.time()
+    script_rx.search("<script" * 500000)
+    cases.append(("leakfinder script-src regex", time.time() - t0))
+
+    htpasswd_rx = dict(_EXPOSED_PATHS)["/.htpasswd"]
+    t0 = time.time()
+    re.compile(htpasswd_rx).search("a" * 5000000)
+    cases.append(("leakfinder htpasswd signature", time.time() - t0))
+
+    slow = [f"{n} ({dt:.2f}s)" for n, dt in cases if dt > budget]
+    detail = ", ".join(f"{n}={dt:.3f}s" for n, dt in cases)
+    return not slow, (detail if not slow else f"SLOW (>{budget}s): {slow}")
+
+
 def main():
     console.print("\n[bold green]=== SilentPivot Self-Test ===[/bold green]\n")
     check("CISA KEV catalog", c_kev)
@@ -215,6 +293,8 @@ def main():
     check("AI payload JSON parse", c_ai_payload_parse)
     check("Input validation", c_validators)
     check("Content discovery parsers", c_contentdisco)
+    check("Task tree persistence", c_tasktree)
+    check("ReDoS guard (adversarial input timing)", c_redos_guard)
 
     passed = sum(1 for _, ok in results if ok)
     total = len(results)
