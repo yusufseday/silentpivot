@@ -1,3 +1,14 @@
+# Python packages SilentPivot needs. These require Python 3.8+ to already be
+# installed — pip cannot install Python itself (it *is* part of Python).
+#
+# On a fresh machine, run the installer instead of pip: it installs Python (if
+# missing), then everything below, then the `silentpivot` command:
+#     Linux/Kali:  bash install.sh
+#     Windows:     powershell -ExecutionPolicy Bypass -File .\install.ps1
+#
+# Optional external tools (not pip packages — install via your OS package manager
+# to unlock the hybrid modules): nmap, nuclei, subfinder/amass, ffuf/gobuster,
+# searchsploit.
 python-nmap
 openai
 python-dotenv

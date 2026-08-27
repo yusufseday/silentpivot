@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts MUST keep LF endings — a CRLF in the shebang breaks execution on
+# Linux/Kali (the interpreter path would end with a stray carriage return).
+*.sh text eol=lf

@@ -7,6 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
+![CI](https://github.com/yusufseday/SilentPivot/actions/workflows/ci.yml/badge.svg)
 
 **SilentPivot** is an AI-powered reconnaissance and vulnerability-analysis **command
 center** for penetration testing and red-team work. It drives many tools from a single
@@ -15,9 +16,6 @@ and turns everything into a professional report — in one command.
 
 Its guiding principle: **surface everything that matters, drown the user in nothing.**
 Signal over noise, verified data over guesses, graceful behaviour on any network.
-
-> ⚠️ For **authorized** security testing only. Always have explicit, written permission
-> before scanning any system.
 
 ---
 
@@ -88,19 +86,45 @@ Each stage is isolated — if one fails, the pipeline degrades gracefully instea
 
 ## 📦 Installation
 
+### Quick install (recommended)
+
+The installer sets up **everything** on a fresh machine — it installs Python itself if
+it's missing, then pipx, then the `silentpivot` command globally (so it works from any
+folder, like `nmap`, with no venv to activate):
+
 ```bash
 git clone https://github.com/yusufseday/SilentPivot.git
 cd SilentPivot
+bash install.sh                    # Linux / Kali
+```
+
+```powershell
+git clone https://github.com/yusufseday/SilentPivot.git
+cd SilentPivot
+powershell -ExecutionPolicy Bypass -File .\install.ps1    # Windows
+```
+
+Open a **new terminal** afterwards (so PATH refreshes), then just run `silentpivot`.
+The install is *editable*, so a later `git pull` updates the tool in place — no reinstall.
+
+> **Note:** SilentPivot orchestrates external recon tools (`nmap`, `nuclei`, `ffuf`…).
+> Those can't be bundled — install them via your OS package manager (on Kali most are
+> preinstalled). The script tells you which are present and which are missing.
+
+### Manual install (venv)
+
+Prefer a self-contained virtual environment?
+
+```bash
 python3 -m venv venv
 source venv/bin/activate          # Windows: .\venv\Scripts\activate
 pip install -e .                   # installs the `silentpivot` command
 cp .env.example .env               # then add your key
 ```
 
-> `pip install -e .` installs SilentPivot in editable mode, so `git pull` updates it in
-> place with no reinstall. Prefer not to install? `pip install -r requirements.txt` also
-> works — then run it with `python -m silentpivot` instead of the `silentpivot` command.
-> For SOCKS proxy (Tor/proxychains) support: `pip install -e ".[socks]"`.
+> `pip install -e .` installs in editable mode (so `git pull` updates it in place).
+> Not installing at all? `pip install -r requirements.txt` works too — then run it with
+> `python -m silentpivot`. For SOCKS proxy (Tor/proxychains): `pip install -e ".[socks]"`.
 
 `.env`:
 ```ini
@@ -185,7 +209,10 @@ xdg-open data/*.html      # or: firefox data/*.html
 
 ```
 SilentPivot/
+├── install.sh             # One-command setup for Linux/Kali (Python + deps + command)
+├── install.ps1            # One-command setup for Windows
 ├── pyproject.toml         # Packaging + entry point (silentpivot command)
+├── .github/workflows/     # CI: ruff lint + offline pytest on push/PR
 ├── silentpivot/           # The importable package
 │   ├── cli.py             # Entry point (panel + CLI / argparse)
 │   ├── __main__.py        # Enables `python -m silentpivot`
@@ -231,11 +258,3 @@ python scripts/selftest.py # full live end-to-end self-test with a readable repo
 The offline suite covers the parsers, detectors, input validation, the persistent task
 tree, and the ReDoS time-budget regression guard. Live checks (NVD, KEV, EPSS, DNS,
 HTTP) are excluded from the default run so it stays hermetic.
-
----
-
-## ⚠️ Legal disclaimer
-
-This tool is for **educational purposes and authorized penetration testing only**.
-Always obtain **explicit, written permission** from the system owner before scanning.
-The developer assumes no liability for misuse.
