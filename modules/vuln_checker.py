@@ -44,7 +44,12 @@ class VulnChecker:
                 continue
 
             if resp.status_code == 200:
-                return resp.json()
+                # A 200 with a non-JSON body (proxy error page, WAF challenge) makes
+                # resp.json() raise ValueError — treat it as "no data", never a crash.
+                try:
+                    return resp.json()
+                except ValueError:
+                    return None
             # 403/429 -> rate limit; back off and retry.
             if resp.status_code in (403, 429):
                 time.sleep(self._delay * (attempt + 2))

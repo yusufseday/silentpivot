@@ -2,6 +2,7 @@ import sys
 import argparse
 
 from modules import ui
+from modules import validators
 from modules.ui import console, print_summary_table
 from modules.scanner import NetworkScanner, SCAN_LABELS
 from modules.ai_engine import SilentAI
@@ -120,6 +121,16 @@ def run_autopilot_cli(args):
 
 def main():
     args = build_parser().parse_args()
+    # Validate the target here, once, for every CLI path. python-nmap shlex-splits the
+    # host string, so an unvalidated target like "-oN /tmp/x" would be read as nmap
+    # *flags*. The interactive panel already validates; the CLI must not be a bypass.
+    if args.target:
+        clean = validators.valid_target(args.target)
+        if clean is None:
+            ui.error(f"Invalid target: {args.target!r} "
+                     "(expected an IP, CIDR or hostname — no flags, spaces or quotes).")
+            sys.exit(2)
+        args.target = clean
     if args.auto:
         if not args.target:
             ui.error("--auto requires a target (-t).")

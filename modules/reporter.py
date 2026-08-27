@@ -427,9 +427,18 @@ def to_html(report):
 </div></body></html>"""
 
 
+def _fs_safe(value, fallback="target"):
+    """Whitelist a string down to filename-safe characters. Defends the report writer
+    against a target containing path separators or '..' — even though CLI/panel input is
+    already validated, this is the last line before a filesystem write."""
+    slug = re.sub(r"[^A-Za-z0-9._-]", "_", str(value or "").strip())
+    slug = slug.lstrip(".")            # never let the name start with '.' (dotfile / '..')
+    return slug[:100] or fallback
+
+
 def default_filename(report, ext):
-    ip = report.get("resolved_ip") or "target"
-    safe_target = report["target"].replace("/", "_").replace(":", "_")
+    ip = _fs_safe(report.get("resolved_ip"), "target")
+    safe_target = _fs_safe(report.get("target"), "target")
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     return f"{ip}({safe_target})_{stamp}.{ext}"
 

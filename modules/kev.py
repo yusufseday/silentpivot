@@ -50,6 +50,8 @@ class KevCatalog:
         try:
             resp = requests.get(KEV_URL, timeout=20)
             if resp.status_code == 200:
+                # A 200 with a non-JSON body (captive portal, proxy/WAF page) makes
+                # resp.json() raise ValueError — caught below so KEV just goes empty.
                 data = resp.json()
                 try:
                     os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
@@ -58,7 +60,7 @@ class KevCatalog:
                 except Exception:
                     pass  # if the cache can't be written, fine — keep it in memory
                 return data
-        except requests.RequestException:
+        except (requests.RequestException, ValueError):
             pass
         return None
 
