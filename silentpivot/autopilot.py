@@ -4,13 +4,12 @@ Chains: Nmap -> CVE/KEV/EPSS/Exploit -> Web probe -> Nuclei -> AI -> unified rep
 Each stage is isolated in its own try/except so one failure degrades gracefully
 instead of aborting the whole run.
 """
-from modules.scanner import NetworkScanner, SCAN_LABELS
-from modules.vuln_checker import VulnChecker
-from modules.webprobe import WebProber, WEB_PORTS
-from modules.nuclei import NucleiScanner
-from modules.ai_engine import SilentAI
-from modules import attack_map
-from modules import reporter
+from silentpivot import attack_map, reporter
+from silentpivot.ai_engine import SilentAI
+from silentpivot.nuclei import NucleiScanner
+from silentpivot.scanner import SCAN_LABELS, NetworkScanner
+from silentpivot.vuln_checker import VulnChecker
+from silentpivot.webprobe import WEB_PORTS, WebProber
 
 
 def run_autopilot(target, scan_type="2", use_ai=True, use_nuclei=True,

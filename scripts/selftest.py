@@ -35,27 +35,27 @@ def check(name, fn):
 
 # ---------------- Checks ----------------
 def c_kev():
-    from modules.kev import KevCatalog
+    from silentpivot.kev import KevCatalog
     hit = KevCatalog().lookup("CVE-2021-44228")  # Log4Shell, always in KEV
     return bool(hit), f"Log4Shell KEV -> {hit.get('name') if hit else None}"
 
 
 def c_epss():
-    from modules.exploits import ExploitIntel
+    from silentpivot.exploits import ExploitIntel
     epss = ExploitIntel()._epss_batch(["CVE-2021-44228"])
     v = epss.get("CVE-2021-44228", {}).get("epss")
     return (v is not None and v > 0.5), f"Log4Shell EPSS = {v}"
 
 
 def c_poc():
-    from modules.exploits import ExploitIntel
+    from silentpivot.exploits import ExploitIntel
     _, data = ExploitIntel()._poc_one("CVE-2021-44228")
     # A reachable service returns a count (>0 expected for Log4Shell).
     return (data["count"] > 0), f"public PoCs found = {data['count']}"
 
 
 def c_exploit_full():
-    from modules.exploits import ExploitIntel
+    from silentpivot.exploits import ExploitIntel
     sample = [{"port": 443, "service": "https", "cves": [
         {"id": "CVE-2021-44228", "cvss": 10.0, "severity": "CRITICAL", "kev": True},
     ]}]
@@ -65,7 +65,7 @@ def c_exploit_full():
 
 
 def c_nvd():
-    from modules.vuln_checker import VulnChecker
+    from silentpivot.vuln_checker import VulnChecker
     vc = VulnChecker()
     data = vc._request({"cpeName": vc._normalize_cpe("cpe:/a:apache:http_server:2.4.49"),
                         "resultsPerPage": 3})
@@ -74,7 +74,7 @@ def c_nvd():
 
 
 def c_subdomain():
-    from modules.subdomain import SubdomainScanner
+    from silentpivot.subdomain import SubdomainScanner
     s = SubdomainScanner()
     sub_sources = s._gather_passive("nmap.org")
     working = [k for k, v in s._passive_counts.items() if v > 0]
@@ -82,7 +82,7 @@ def c_subdomain():
 
 
 def c_portcheck():
-    from modules.portcheck import PortChecker
+    from silentpivot.portcheck import PortChecker
     # scanme.nmap.org is Nmap's official legal scan target; 22 and 80 are open.
     res = PortChecker(timeout=3.0).scan("scanme.nmap.org", ports=[22, 80, 443], only_open=True)
     if res is None:
@@ -92,7 +92,7 @@ def c_portcheck():
 
 
 def c_webprobe():
-    from modules.webprobe import WebProber
+    from silentpivot.webprobe import WebProber
     res = WebProber(timeout=10).probe_host("wordpress.com", ports=[443])
     if not res:
         return False, "no web endpoint reachable"
@@ -102,7 +102,7 @@ def c_webprobe():
 
 
 def c_nuclei():
-    from modules.nuclei import NucleiScanner
+    from silentpivot.nuclei import NucleiScanner
     # Parsing is deterministic and always testable; the binary is optional.
     sample = ('{"template-id":"x","info":{"name":"n","severity":"high"},'
               '"matched-at":"https://t/a"}')
@@ -113,7 +113,7 @@ def c_nuclei():
 
 
 def c_bypass403():
-    from modules.bypass403 import Bypass403
+    from silentpivot.bypass403 import Bypass403
     attempts = Bypass403()._build_attempts("https://host/admin")
     techniques = {a[0].split()[0] for a in attempts}  # header / path / method
     ok = len(attempts) > 20 and {"header", "path", "method"} <= techniques
@@ -121,7 +121,7 @@ def c_bypass403():
 
 
 def c_leakfinder():
-    from modules.leakfinder import _COMPILED, _PLACEHOLDER
+    from silentpivot.leakfinder import _COMPILED, _PLACEHOLDER
     sample = 'a="AKIAIOSFODNN7EXAMPLE" b="AKIA1234567890ABCDEF" c="ghp_' + "z" * 36 + '"'
     hits = []
     for name, (pat, _c) in _COMPILED.items():
@@ -134,7 +134,7 @@ def c_leakfinder():
 
 
 def c_pathtraversal():
-    from modules.pathtraversal import PathTraversal
+    from silentpivot.pathtraversal import PathTraversal
     pt = PathTraversal()
     hit = pt._check("root:x:0:0:root:/root:/bin/bash", "x")
     clean = pt._check("<html>welcome</html>", "x")
@@ -143,7 +143,7 @@ def c_pathtraversal():
 
 
 def c_ssrf():
-    from modules.ssrf import SSRFScanner
+    from silentpivot.ssrf import SSRFScanner
     # Real AWS metadata response tokens (not present in the payloads)
     real = SSRFScanner._check('{"AccessKeyId":"AKIA...","SecretAccessKey":"x"}', "http://169.254.169.254/")
     # Reflected payload must NOT trigger (the guard): body echoes the payload path
@@ -155,13 +155,13 @@ def c_ssrf():
 
 
 def c_ai_payload_parse():
-    from modules.ai_engine import SilentAI
+    from silentpivot.ai_engine import SilentAI
     got = SilentAI._parse_payload_list('text ["http://127.0.0.1/","gopher://x"] tail', 12)
     return len(got) == 2, f"parsed {got} (bad input -> {SilentAI._parse_payload_list('none', 12)})"
 
 
 def c_validators():
-    from modules import validators as v
+    from silentpivot import validators as v
     checks = [
         # (result, expected, label)
         (v.valid_target("10.0.2.9"), "10.0.2.9", "ip ok"),
@@ -179,7 +179,7 @@ def c_validators():
 
 
 def c_contentdisco():
-    from modules.contentdisco import ContentDiscovery, BUILTIN_WORDLIST
+    from silentpivot.contentdisco import BUILTIN_WORDLIST, ContentDiscovery
     # ffuf base64-encodes FUZZ values in JSON output — the parser must decode them.
     ffuf = ('{"input":{"FUZZ":"admin"},"url":"http://t/admin","status":200,"length":12}\n'
             '{"input":{"FUZZ":"cGhwTXlBZG1pbg=="},"status":301,"length":9}\n'
@@ -198,8 +198,7 @@ def c_contentdisco():
 
 
 def c_tasktree():
-    import shutil
-    from modules.tasktree import TaskTree, DONE
+    from silentpivot.tasktree import DONE, TaskTree
     test_dir = os.path.join("data", "engagements")
     had_dir = os.path.isdir(test_dir)
     t = TaskTree("_selftest_target")
@@ -237,10 +236,11 @@ def c_redos_guard():
     hangs on hostile input) before being bounded — this pins that fix."""
     import re
     import time
-    from modules.pathtraversal import _SIGNATURES
-    from modules.webprobe import _TITLE_RE
-    from modules.ai_engine import SilentAI
-    from modules.leakfinder import _EXPOSED_PATHS
+
+    from silentpivot.ai_engine import SilentAI
+    from silentpivot.leakfinder import _EXPOSED_PATHS
+    from silentpivot.pathtraversal import _SIGNATURES
+    from silentpivot.webprobe import _TITLE_RE
 
     budget = 5.0
     cases = []

@@ -10,7 +10,7 @@ import re
 import requests
 import urllib3
 
-from modules.opsec import profile as opsec
+from silentpivot.opsec import profile as opsec
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

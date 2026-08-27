@@ -10,19 +10,19 @@ discards anything that matches it. A hit is a response that genuinely differs.
 
 Active testing — authorized targets only.
 """
-import os
-import json
 import base64
 import binascii
-import shutil
-import tempfile
-import subprocess
 import concurrent.futures
+import json
+import os
+import shutil
+import subprocess
+import tempfile
 from urllib.parse import urljoin, urlparse
 
 import requests
 
-from modules.opsec import profile as opsec
+from silentpivot.opsec import profile as opsec
 
 EXTERNAL_TOOLS = ("ffuf", "gobuster")
 TOOL_TIMEOUT = 600
@@ -36,28 +36,7 @@ SYSTEM_WORDLISTS = [
 ]
 
 # Compact built-in list: the paths that actually matter on a first pass.
-BUILTIN_WORDLIST = """
-admin administrator login signin signup register dashboard panel cpanel wp-admin
-wp-login.php wp-content wp-includes phpmyadmin pma adminer manager console
-api api/v1 api/v2 api-docs swagger swagger-ui openapi graphql graphiql rest
-backup backups bak old new test testing dev develop staging stage prod uat demo
-config configuration settings setup install installer upgrade update
-db database sql dump dumps data export exports import
-logs log debug trace error errors status health healthz metrics actuator
-actuator/health actuator/env server-status server-info
-uploads upload files file download downloads media images img assets static
-tmp temp cache private secret secrets internal hidden
-.git .git/config .git/HEAD .svn .hg .env .env.local .env.production .htaccess
-.htpasswd .DS_Store .aws .ssh id_rsa web.config composer.json package.json
-robots.txt sitemap.xml crossdomain.xml security.txt .well-known/security.txt
-readme readme.md changelog license phpinfo.php info.php test.php shell.php
-user users account accounts profile members member customer clients
-mail webmail email roundcube squirrelmail
-jenkins gitlab git jira confluence grafana kibana prometheus nagios zabbix
-solr elasticsearch redis mongo kafka rabbitmq
-cgi-bin cgi-bin/test-cgi scripts includes lib vendor node_modules
-portal intranet extranet vpn remote citrix owa exchange autodiscover
-""".split()
+BUILTIN_WORDLIST = ["admin", "administrator", "login", "signin", "signup", "register", "dashboard", "panel", "cpanel", "wp-admin", "wp-login.php", "wp-content", "wp-includes", "phpmyadmin", "pma", "adminer", "manager", "console", "api", "api/v1", "api/v2", "api-docs", "swagger", "swagger-ui", "openapi", "graphql", "graphiql", "rest", "backup", "backups", "bak", "old", "new", "test", "testing", "dev", "develop", "staging", "stage", "prod", "uat", "demo", "config", "configuration", "settings", "setup", "install", "installer", "upgrade", "update", "db", "database", "sql", "dump", "dumps", "data", "export", "exports", "import", "logs", "log", "debug", "trace", "error", "errors", "status", "health", "healthz", "metrics", "actuator", "actuator/health", "actuator/env", "server-status", "server-info", "uploads", "upload", "files", "file", "download", "downloads", "media", "images", "img", "assets", "static", "tmp", "temp", "cache", "private", "secret", "secrets", "internal", "hidden", ".git", ".git/config", ".git/HEAD", ".svn", ".hg", ".env", ".env.local", ".env.production", ".htaccess", ".htpasswd", ".DS_Store", ".aws", ".ssh", "id_rsa", "web.config", "composer.json", "package.json", "robots.txt", "sitemap.xml", "crossdomain.xml", "security.txt", ".well-known/security.txt", "readme", "readme.md", "changelog", "license", "phpinfo.php", "info.php", "test.php", "shell.php", "user", "users", "account", "accounts", "profile", "members", "member", "customer", "clients", "mail", "webmail", "email", "roundcube", "squirrelmail", "jenkins", "gitlab", "git", "jira", "confluence", "grafana", "kibana", "prometheus", "nagios", "zabbix", "solr", "elasticsearch", "redis", "mongo", "kafka", "rabbitmq", "cgi-bin", "cgi-bin/test-cgi", "scripts", "includes", "lib", "vendor", "node_modules", "portal", "intranet", "extranet", "vpn", "remote", "citrix", "owa", "exchange", "autodiscover"]
 
 # Extensions worth appending to word stems in the Python fallback.
 DEFAULT_EXTENSIONS = ["", ".php", ".bak", ".old", ".txt", ".zip", ".json"]
@@ -234,9 +213,9 @@ class ContentDiscovery:
             return None
         size = len(r.content)
         # Soft-404 filter: same status as the baseline AND a near-identical body.
-        if baseline and baseline["status"] == r.status_code and not baseline["size_varies"]:
-            if abs(size - baseline["size"]) < 64:
-                return None
+        if (baseline and baseline["status"] == r.status_code
+                and not baseline["size_varies"] and abs(size - baseline["size"]) < 64):
+            return None
         return {
             "path": "/" + path.lstrip("/"),
             "url": url,

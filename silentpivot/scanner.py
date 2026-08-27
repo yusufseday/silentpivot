@@ -1,11 +1,12 @@
-import nmap
-import sys
-import socket
-import ipaddress
 import functools
+import ipaddress
+import socket
+import sys
 
-from modules.opsec import profile as opsec
-from modules import validators
+import nmap
+
+from silentpivot import validators
+from silentpivot.opsec import profile as opsec
 
 # Single source of truth for scan-type labels (shared by panel, autopilot, CLI).
 SCAN_LABELS = {

@@ -11,10 +11,12 @@ Design: entries are content-addressed (target + kind + a stable key derived from
 finding) so re-running a scan updates existing leads instead of duplicating them, and
 marking a lead 'done' persists across rescans.
 """
+from __future__ import annotations
+
+import hashlib
+import json
 import os
 import re
-import json
-import hashlib
 from datetime import datetime, timezone
 
 ENGAGEMENTS_DIR = os.path.join("data", "engagements")
@@ -29,27 +31,27 @@ PRIORITY = {
 }
 
 
-def _slug(target):
+def _slug(target: str) -> str:
     """Filesystem-safe file name for a target (IP or hostname)."""
     return re.sub(r"[^A-Za-z0-9._-]", "_", target.strip())[:200] or "target"
 
 
-def _key(kind, *parts):
+def _key(kind: str, *parts) -> str:
     """Stable id for a lead: same finding -> same id across rescans."""
     raw = kind + "|" + "|".join(str(p) for p in parts)
     return hashlib.sha1(raw.encode("utf-8", "replace")).hexdigest()[:12]
 
 
 class TaskTree:
-    def __init__(self, target):
+    def __init__(self, target: str):
         self.target = target
         self.path = os.path.join(ENGAGEMENTS_DIR, _slug(target) + ".json")
-        self.leads = {}          # id -> lead dict
+        self.leads: dict = {}          # id -> lead dict
         self.created = None
         self._load()
 
     # ---------- persistence ----------
-    def _load(self):
+    def _load(self) -> None:
         if os.path.isfile(self.path):
             try:
                 with open(self.path, encoding="utf-8") as f:
@@ -61,7 +63,7 @@ class TaskTree:
         if self.created is None:
             self.created = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    def save(self):
+    def save(self) -> None:
         os.makedirs(ENGAGEMENTS_DIR, exist_ok=True)
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -70,17 +72,18 @@ class TaskTree:
         os.replace(tmp, self.path)   # atomic — a crash mid-write can't corrupt the file
 
     @staticmethod
-    def exists(target):
+    def exists(target: str) -> bool:
         return os.path.isfile(os.path.join(ENGAGEMENTS_DIR, _slug(target) + ".json"))
 
     @staticmethod
-    def list_engagements():
+    def list_engagements() -> list[str]:
         if not os.path.isdir(ENGAGEMENTS_DIR):
             return []
         return sorted(f[:-5] for f in os.listdir(ENGAGEMENTS_DIR) if f.endswith(".json"))
 
     # ---------- adding / updating leads ----------
-    def _add(self, kind, key, title, evidence, priority=None, status=OPEN):
+    def _add(self, kind: str, key: str, title: str, evidence, priority: str | None = None,
+             status: str = OPEN) -> None:
         """Insert a new lead, or refresh an existing one's evidence without touching
         its status — a rescan must not silently un-complete work you already did."""
         existing = self.leads.get(key)
@@ -97,8 +100,10 @@ class TaskTree:
             "last_seen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
 
-    def ingest(self, findings=None, nuclei=None, web=None, subdomains=None,
-              leak=None, vulns=None, content=None):
+    def ingest(self, findings: list | None = None, nuclei: list | None = None,
+               web: list | None = None, subdomains: list | None = None,
+               leak: dict | None = None, vulns: list | None = None,
+               content: list | None = None) -> None:
         """Turn a batch of module output into leads. Safe to call repeatedly (e.g.
         after every tool) — it only adds what's new or updates evidence."""
         for r in findings or []:
@@ -167,7 +172,7 @@ class TaskTree:
                           f"status 200, {c.get('size')}B", priority="exposed_file")
 
     # ---------- status changes ----------
-    def set_status(self, lead_id, status, note=None):
+    def set_status(self, lead_id: str, status: str, note: str | None = None) -> bool:
         """Update a lead's status and persist immediately — a status change is the one
         thing in this module that must never be lost to a forgotten save() call."""
         lead = self.leads.get(lead_id)
@@ -179,17 +184,17 @@ class TaskTree:
         self.save()
         return True
 
-    def find(self, prefix):
+    def find(self, prefix: str) -> str | None:
         """Resolve a short id prefix (what the user types) to a full lead id."""
         matches = [k for k in self.leads if k.startswith(prefix)]
         return matches[0] if len(matches) == 1 else None
 
     # ---------- views ----------
-    def open_leads(self):
+    def open_leads(self) -> list[dict]:
         return sorted((dict(id=k, **v) for k, v in self.leads.items() if v["status"] == OPEN),
                      key=lambda x: (x["priority"], -x["seen"]))
 
-    def summary(self):
+    def summary(self) -> dict:
         counts = {OPEN: 0, DONE: 0, NO_RESULT: 0}
         for v in self.leads.values():
             counts[v["status"]] = counts.get(v["status"], 0) + 1

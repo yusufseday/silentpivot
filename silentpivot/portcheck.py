@@ -1,9 +1,9 @@
 """Native TCP port check — a fast open/closed test that works even without nmap.
 Pure Python socket + thread pool; only attempts a TCP connect to the target."""
-import socket
 import concurrent.futures
+import socket
 
-from modules import validators
+from silentpivot import validators
 
 # Common service ports (default for a quick scan)
 COMMON_PORTS = {

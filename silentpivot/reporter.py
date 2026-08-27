@@ -1,7 +1,9 @@
-import os
-import re
+from __future__ import annotations
+
 import html
 import json
+import os
+import re
 import socket
 from datetime import datetime
 
@@ -25,9 +27,10 @@ def _worst_cve(cves):
     )
 
 
-def build_report_data(target, scan_type, results, analysis=None,
-                      web=None, nuclei=None, nuclei_meta=None, scan_meta=None,
-                      attack=None, attack_story=None):
+def build_report_data(target: str, scan_type, results: list, analysis: str | None = None,
+                      web: list | None = None, nuclei: list | None = None,
+                      nuclei_meta: dict | None = None, scan_meta: dict | None = None,
+                      attack: list | None = None, attack_story: str | None = None) -> dict:
     """The single structured data model every output format is built from."""
     try:
         ip = socket.gethostbyname(target)
@@ -427,7 +430,7 @@ def to_html(report):
 </div></body></html>"""
 
 
-def _fs_safe(value, fallback="target"):
+def _fs_safe(value, fallback: str = "target") -> str:
     """Whitelist a string down to filename-safe characters. Defends the report writer
     against a target containing path separators or '..' — even though CLI/panel input is
     already validated, this is the last line before a filesystem write."""
@@ -436,14 +439,15 @@ def _fs_safe(value, fallback="target"):
     return slug[:100] or fallback
 
 
-def default_filename(report, ext):
+def default_filename(report: dict, ext: str) -> str:
     ip = _fs_safe(report.get("resolved_ip"), "target")
     safe_target = _fs_safe(report.get("target"), "target")
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     return f"{ip}({safe_target})_{stamp}.{ext}"
 
 
-def save_report(report, fmt="md", output_path=None, out_dir="data"):
+def save_report(report: dict, fmt: str = "md", output_path: str | None = None,
+                out_dir: str = "data") -> str:
     """Write the report to disk in the requested format and return the path."""
     fmt = fmt.lower()
     renderers = {"json": to_json, "md": to_markdown, "markdown": to_markdown, "html": to_html}
@@ -476,7 +480,7 @@ def save_report(report, fmt="md", output_path=None, out_dir="data"):
     return output_path
 
 
-def export_saved(json_path, fmt):
+def export_saved(json_path: str, fmt: str) -> str:
     """Re-render a previously-saved report (from its JSON) into another format —
     no re-scan needed. Returns the new file path."""
     with open(json_path, encoding="utf-8") as f:

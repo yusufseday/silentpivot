@@ -5,8 +5,10 @@ nuclei) and as URLs. python-nmap in particular shlex-splits the host string, so 
 unvalidated target like "-oN /tmp/x" would turn into nmap *flags*. Everything the user
 types is validated here before it reaches a scanner.
 """
-import re
+from __future__ import annotations
+
 import ipaddress
+import re
 from urllib.parse import urlparse
 
 # A hostname label: letters/digits/hyphen, not starting or ending with a hyphen.
@@ -16,7 +18,7 @@ _HOSTNAME_RE = re.compile(rf"^{_LABEL}(\.{_LABEL})*\.?$")
 MAX_PORTS = 65535
 
 
-def is_ip(value):
+def is_ip(value: str) -> bool:
     try:
         ipaddress.ip_address(value)
         return True
@@ -24,7 +26,7 @@ def is_ip(value):
         return False
 
 
-def is_network(value):
+def is_network(value: str) -> bool:
     """CIDR range such as 10.0.2.0/24."""
     try:
         ipaddress.ip_network(value, strict=False)
@@ -33,11 +35,11 @@ def is_network(value):
         return False
 
 
-def is_hostname(value):
+def is_hostname(value: str) -> bool:
     return bool(value) and len(value) <= 253 and bool(_HOSTNAME_RE.match(value))
 
 
-def valid_target(value):
+def valid_target(value: str | None) -> str | None:
     """Normalized scan target (IP, CIDR or hostname), or None if unusable.
     Rejects anything with whitespace/flags/quotes that a tool could read as an argument."""
     value = (value or "").strip()
@@ -53,7 +55,7 @@ def valid_target(value):
     return None
 
 
-def valid_domain(value):
+def valid_domain(value: str | None) -> str | None:
     """Domain for OSINT/subdomain work: a hostname, never an IP or CIDR."""
     value = (value or "").strip().lower().lstrip("*.")
     if "://" in value:
@@ -64,7 +66,7 @@ def valid_domain(value):
     return value if "." in value else None      # a bare label isn't a domain
 
 
-def valid_url(raw):
+def valid_url(raw: str | None) -> str | None:
     """Validate + normalize a user-entered URL (defaults to https://). None if unusable.
     Only http/https are accepted — a 'javascript:' or 'file:' string is not a web target."""
     raw = (raw or "").strip()
@@ -79,7 +81,7 @@ def valid_url(raw):
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return None
     try:
-        parsed.port          # raises ValueError on a junk port ("javascript:alert(1)")
+        _ = parsed.port      # property access raises ValueError on a junk port
     except ValueError:
         return None
     host = parsed.hostname
@@ -88,7 +90,7 @@ def valid_url(raw):
     return raw
 
 
-def parse_ports(spec, max_ports=MAX_PORTS):
+def parse_ports(spec: str | None, max_ports: int = MAX_PORTS) -> list[int] | None:
     """'22,80' / '1-1024' / 'top' -> sorted port list (None = use the caller's default).
     Returns None for 'top'/empty, [] when nothing valid was given. Never raises, and
     never expands an absurd range into memory."""

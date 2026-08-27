@@ -13,9 +13,11 @@ Profiles:
 
 Proxy comes from the OPSEC profile or the standard HTTP(S)_PROXY / SP_PROXY env vars.
 """
+from __future__ import annotations
+
 import os
-import time
 import random
+import time
 
 import urllib3
 
@@ -148,7 +150,7 @@ class OpsecProfile:
                 "would reveal your real IP. To proxy everything, launch the tool with "
                 "proxychains:  proxychains4 python silentpivot.py")
 
-    def fetch(self, session, url, **kwargs):
+    def fetch(self, session, url: str, **kwargs):
         """GET with a bounded body. Returns a requests.Response whose .text/.content
         hold at most MAX_BODY_BYTES, so a hostile host (or a defensive tarpit) can't
         stream data until we run out of memory. Raises the usual requests exceptions."""

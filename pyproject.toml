@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "silentpivot"
+version = "1.0.0"
+description = "AI-powered reconnaissance and vulnerability-analysis command center for authorized penetration testing and red-team work."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Yusuf Seday" }]
+keywords = ["pentest", "red-team", "recon", "vulnerability", "nmap", "nuclei", "security"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+]
+dependencies = [
+    "python-nmap",
+    "openai",
+    "python-dotenv",
+    "rich",
+    "requests",
+]
+
+[project.optional-dependencies]
+# SOCKS proxy support for the OPSEC profile (Tor/proxychains). Install with:
+#   pip install 'silentpivot[socks]'
+socks = ["requests[socks]"]
+# Development / test tooling.
+dev = ["pytest>=7.0", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/yusufseday/SilentPivot"
+Repository = "https://github.com/yusufseday/SilentPivot"
+
+[project.scripts]
+silentpivot = "silentpivot.cli:main"
+
+[tool.setuptools]
+# Flat-layout: the importable package lives in ./silentpivot next to pyproject.toml.
+packages = ["silentpivot"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+# A pragmatic set: pyflakes (real bugs), bugbear, pyupgrade, isort, comprehensions,
+# and a few simplify/perf rules. The ignores below are deliberate design choices, not
+# oversights — documented so `ruff check` stays a real signal instead of noise.
+select = ["F", "E", "W", "I", "B", "UP", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",     # line length is enforced by the formatter, not as an error
+    "E701",     # deliberate compact one-liners (e.g. `close(); i += 1; continue`)
+    "E702",     # same — intentional semicolon-joined statements in tight loops
+    "E741",     # short loop/lambda names are readable in their small scope here
+    "B008",     # calling a function in a default arg — used intentionally (opsec profile)
+    "SIM105",   # `contextlib.suppress` is not clearer than try/except/pass here
+    "SIM115",   # temp files use delete=False + try/finally on purpose (external tools need a path)
+    "RUF001",   # em-dashes / Unicode in user-facing strings are intentional
+    "RUF012",   # class-level constant dicts (MENU) are never mutated
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests intentionally build adversarial strings and touch private helpers.
+"tests/*" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Live/network checks are opt-in so the default `pytest` run stays offline & fast:
+#   pytest              -> offline unit tests only
+#   pytest -m live      -> the live end-to-end checks against real data sources
+markers = [
+    "live: hits real network sources (NVD, KEV, EPSS, DNS, HTTP) — needs connectivity",
+]
+addopts = "-m 'not live'"

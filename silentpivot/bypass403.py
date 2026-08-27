@@ -10,9 +10,9 @@ import concurrent.futures
 from urllib.parse import urlparse
 
 import requests
-
-from modules.opsec import profile as opsec
 import urllib3
+
+from silentpivot.opsec import profile as opsec
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

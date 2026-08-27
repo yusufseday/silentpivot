@@ -1,36 +1,32 @@
 """SilentPivot command center — interactive terminal panel.
 Launched when the program is run without arguments; drives every tool from one menu."""
-import os
 import glob
+import os
 from urllib.parse import urlparse
 
-from rich.prompt import Prompt, Confirm
-from rich.table import Table
-from rich.panel import Panel as RichPanel
 from rich.markdown import Markdown
+from rich.panel import Panel as RichPanel
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
 
-from modules import ui
-from modules.ui import console
-from modules.scanner import NetworkScanner, SCAN_LABELS
-from modules.vuln_checker import VulnChecker
-from modules.ai_engine import SilentAI
-from modules.subdomain import SubdomainScanner
-from modules.portcheck import PortChecker
-from modules.webprobe import WebProber, WEB_PORTS
-from modules.nuclei import NucleiScanner
-from modules.bypass403 import Bypass403
-from modules.leakfinder import LeakFinder
-from modules.pathtraversal import PathTraversal
-from modules.ssrf import SSRFScanner
-from modules.contentdisco import ContentDiscovery
-from modules import contentdisco
-from modules.autopilot import run_autopilot
-from modules.opsec import profile as opsec, NORMAL, STEALTH, PASSIVE
-from modules import attack_map
-from modules import validators
-from modules import reporter
-from modules.tasktree import TaskTree, OPEN, DONE, NO_RESULT
-
+from silentpivot import attack_map, contentdisco, reporter, ui, validators
+from silentpivot.ai_engine import SilentAI
+from silentpivot.autopilot import run_autopilot
+from silentpivot.bypass403 import Bypass403
+from silentpivot.contentdisco import ContentDiscovery
+from silentpivot.leakfinder import LeakFinder
+from silentpivot.nuclei import NucleiScanner
+from silentpivot.opsec import NORMAL, PASSIVE, STEALTH
+from silentpivot.opsec import profile as opsec
+from silentpivot.pathtraversal import PathTraversal
+from silentpivot.portcheck import PortChecker
+from silentpivot.scanner import SCAN_LABELS, NetworkScanner
+from silentpivot.ssrf import SSRFScanner
+from silentpivot.subdomain import SubdomainScanner
+from silentpivot.tasktree import DONE, NO_RESULT, OPEN, TaskTree
+from silentpivot.ui import console
+from silentpivot.vuln_checker import VulnChecker
+from silentpivot.webprobe import WEB_PORTS, WebProber
 
 # Tools whose output should feed the persistent task tree. Kept as one explicit list
 # (rather than scattering _sync_tree() calls across ten methods) so it's obvious at a

@@ -9,14 +9,14 @@ Two capabilities:
 Every finding is backed by concrete evidence (a matched pattern / a real file), never
 a guess. An optional AI false-positive filter can be layered on top later.
 """
-import re
 import concurrent.futures
-from urllib.parse import urlparse, urljoin
+import re
+from urllib.parse import urljoin, urlparse
 
 import requests
-
-from modules.opsec import profile as opsec
 import urllib3
+
+from silentpivot.opsec import profile as opsec
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

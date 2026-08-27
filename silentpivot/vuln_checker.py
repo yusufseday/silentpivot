@@ -1,9 +1,10 @@
 import os
 import time
+
 import requests
 
-from modules.kev import KevCatalog
-from modules.exploits import ExploitIntel
+from silentpivot.exploits import ExploitIntel
+from silentpivot.kev import KevCatalog
 
 
 class VulnChecker:

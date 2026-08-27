@@ -12,17 +12,17 @@ Combines every angle into one pass:
 Passive sources send no packets to the target; brute-force + enrichment are active.
 Run against authorized targets only.
 """
+import concurrent.futures
 import random
 import shutil
 import socket
 import subprocess
-import concurrent.futures
 
 import requests
-
-from modules.opsec import profile as opsec
-from modules import validators
 import urllib3
+
+from silentpivot import validators
+from silentpivot.opsec import profile as opsec
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -30,22 +30,7 @@ EXTERNAL_TOOLS = ("subfinder", "amass")
 TOOL_TIMEOUT = 120
 
 # Built-in brute-force wordlist (common subdomain names). A custom list can be passed.
-DEFAULT_WORDLIST = """
-www mail ftp localhost webmail smtp pop pop3 imap ns ns1 ns2 ns3 ns4 dns dns1 dns2
-mx mx1 email cpanel whm autodiscover autoconfig admin administrator test dev staging
-stage prod production api api1 api2 apis app apps mobile m portal vpn remote secure
-sso auth login signin account accounts my dashboard panel cpan host server web web1
-web2 blog shop store cdn static assets img images media video files download uploads
-docs doc wiki support help helpdesk status monitor grafana kibana jenkins gitlab git
-svn jira confluence nexus sonar registry docker k8s kube internal intranet extranet
-corp office ldap ad exchange owa lync sip voip pbx crm erp hr finance payroll billing
-payment pay checkout cart new old beta alpha demo sandbox uat qa preprod backup db
-database sql mysql postgres redis mongo elastic search solr proxy gateway gw router
-firewall fw vps cloud aws azure gcp s3 storage bucket data analytics stats metrics
-grafana prometheus alerts logs log syslog splunk soc ns5 smtp2 mail2 mx2 relay news
-forum community events careers jobs partners partner reseller affiliate track click
-link go redirect short url api-dev api-staging dev-api staging-api test-api adminpanel
-""".split()
+DEFAULT_WORDLIST = ["www", "mail", "ftp", "localhost", "webmail", "smtp", "pop", "pop3", "imap", "ns", "ns1", "ns2", "ns3", "ns4", "dns", "dns1", "dns2", "mx", "mx1", "email", "cpanel", "whm", "autodiscover", "autoconfig", "admin", "administrator", "test", "dev", "staging", "stage", "prod", "production", "api", "api1", "api2", "apis", "app", "apps", "mobile", "m", "portal", "vpn", "remote", "secure", "sso", "auth", "login", "signin", "account", "accounts", "my", "dashboard", "panel", "cpan", "host", "server", "web", "web1", "web2", "blog", "shop", "store", "cdn", "static", "assets", "img", "images", "media", "video", "files", "download", "uploads", "docs", "doc", "wiki", "support", "help", "helpdesk", "status", "monitor", "grafana", "kibana", "jenkins", "gitlab", "git", "svn", "jira", "confluence", "nexus", "sonar", "registry", "docker", "k8s", "kube", "internal", "intranet", "extranet", "corp", "office", "ldap", "ad", "exchange", "owa", "lync", "sip", "voip", "pbx", "crm", "erp", "hr", "finance", "payroll", "billing", "payment", "pay", "checkout", "cart", "new", "old", "beta", "alpha", "demo", "sandbox", "uat", "qa", "preprod", "backup", "db", "database", "sql", "mysql", "postgres", "redis", "mongo", "elastic", "search", "solr", "proxy", "gateway", "gw", "router", "firewall", "fw", "vps", "cloud", "aws", "azure", "gcp", "s3", "storage", "bucket", "data", "analytics", "stats", "metrics", "grafana", "prometheus", "alerts", "logs", "log", "syslog", "splunk", "soc", "ns5", "smtp2", "mail2", "mx2", "relay", "news", "forum", "community", "events", "careers", "jobs", "partners", "partner", "reseller", "affiliate", "track", "click", "link", "go", "redirect", "short", "url", "api-dev", "api-staging", "dev-api", "staging-api", "test-api", "adminpanel"]
 
 # service -> substrings that appear when the pointed-to service is unclaimed.
 TAKEOVER_FINGERPRINTS = {

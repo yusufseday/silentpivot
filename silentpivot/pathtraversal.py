@@ -8,15 +8,15 @@ guessing — if there's no signature match, there's no finding.
 Active testing — run against authorized targets only. TLS verification is disabled
 because pentest targets often use self-signed certificates.
 """
-import re
 import base64
 import concurrent.futures
-from urllib.parse import urlparse, urlunparse, parse_qsl
+import re
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 import requests
-
-from modules.opsec import profile as opsec
 import urllib3
+
+from silentpivot.opsec import profile as opsec
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

@@ -11,14 +11,14 @@ target-tailored payloads can be added on top; the engine still verifies by evide
 
 Active testing — authorized targets only.
 """
-import re
 import concurrent.futures
-from urllib.parse import urlparse, urlunparse, parse_qsl
+import re
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 import requests
-
-from modules.opsec import profile as opsec
 import urllib3
+
+from silentpivot.opsec import profile as opsec
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 

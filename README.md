@@ -36,15 +36,27 @@ Signal over noise, verified data over guesses, graceful behaviour on any network
 - **Exploit mapping** — public GitHub PoCs + **ExploitDB** (via `searchsploit`).
 - **Nuclei** — active templated scanning (thousands of community templates).
 
+**Active testing** (evidence-based — a finding is confirmed by concrete proof, never a guess)
+- **403 bypass** — 39 forbidden-path bypass techniques (header spoofing, path mutation, method change).
+- **Leak / secret finder** — exposed keys, tokens, and files (`.git`, `.env`, `.htpasswd`, backups) via signature + 404-baseline.
+- **Path traversal / LFI** — parameter file-read fuzzing, confirmed by response signatures (`/etc/passwd`, `win.ini`, PHP source).
+- **SSRF** — cloud-metadata probing, confirmed only by real metadata tokens (reflected payloads are filtered out).
+- **Content discovery** — hidden paths/panels/backups via `ffuf`/`gobuster` or a pure-Python fuzzer, with soft-404 filtering.
+
 **Analysis & reporting**
 - **AI analysis** — an LLM writes a senior-pentester report, grounded strictly on verified CVEs (no hallucinated CVE numbers).
+- **AI co-pilot** — reads the current recon state and recommends prioritized next actions.
+- **MITRE ATT&CK mapping** — deterministic finding→technique mapping + an AI-narrated kill-chain (technique IDs never invented).
 - **Autopilot** — the whole pipeline in one command.
 - **Reports** — Markdown, JSON, or a polished self-contained **HTML** report.
 
-**Smart behaviour**
+**Red-team & workflow**
+- **OPSEC / stealth profiles** — `normal` / `stealth` (slow nmap, request jitter, capped workers) / `passive` (zero packets to the target); optional proxy (Tor/Burp/proxychains).
+- **Persistent task tree** — every finding becomes a tracked "lead" (open / done / no-result) stored per target, so an engagement survives closing and reopening the tool.
 - **Layered disclosure** — confirmed services shown first; WAF/decoy phantom ports collapsed but saved in full to the report.
 - **WAF / firewall awareness** — tells you when a target is behind a WAF or when your own network is blocking the scan.
 - **Network-adaptive** — auto-detects IPv6 connectivity and multi-IP (round-robin) targets, and lets you pick which IP to scan.
+- **Hardened input handling** — every target/URL is validated (no nmap argument injection), and target-controlled output can't forge the terminal or hang the scanner.
 
 ---
 
@@ -70,7 +82,7 @@ Each stage is isolated — if one fails, the pipeline degrades gracefully instea
 - **Python 3.8+**
 - **Nmap** on your PATH — for the nmap scan module. ([Download](https://nmap.org/download.html))
 - **AI API key** (OpenAI-compatible) — only for the AI report module.
-- **Optional** (unlock the hybrid tools, e.g. on Kali): `nuclei`, `subfinder`/`amass`, `searchsploit` (exploitdb).
+- **Optional** (unlock the hybrid tools, e.g. on Kali): `nuclei`, `subfinder`/`amass`, `searchsploit` (exploitdb), `ffuf`/`gobuster`.
 
 ---
 
@@ -81,9 +93,14 @@ git clone https://github.com/yusufseday/SilentPivot.git
 cd SilentPivot
 python3 -m venv venv
 source venv/bin/activate          # Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e .                   # installs the `silentpivot` command
 cp .env.example .env               # then add your key
 ```
+
+> `pip install -e .` installs SilentPivot in editable mode, so `git pull` updates it in
+> place with no reinstall. Prefer not to install? `pip install -r requirements.txt` also
+> works — then run it with `python -m silentpivot` instead of the `silentpivot` command.
+> For SOCKS proxy (Tor/proxychains) support: `pip install -e ".[socks]"`.
 
 `.env`:
 ```ini
@@ -93,7 +110,7 @@ NVD_API_KEY=            # optional — speeds up CVE queries
 
 Verify everything works against the real data sources:
 ```bash
-python scripts/selftest.py         # expect all checks to pass
+python scripts/selftest.py         # live end-to-end check of every module
 ```
 
 ---
@@ -102,11 +119,13 @@ python scripts/selftest.py         # expect all checks to pass
 
 **Interactive panel (default):**
 ```bash
-python silentpivot.py
+silentpivot                        # or: python -m silentpivot
 ```
 
 ```
  A   Autopilot / Full Engagement   (runs the whole pipeline)
+ ?   AI Co-pilot                   (what should I do next?)
+
  1   Nmap Port Scan                (service/version detection)
  2   Subdomain Discovery           (passive OSINT + DNS)
  3   Quick Port Check              (open/closed — no nmap needed)
@@ -115,20 +134,34 @@ python silentpivot.py
  6   CVE + KEV Vuln Analysis       (on the last scan)
  7   Generate AI Report            (on the last scan)
  8   Saved Reports
+ 9   403 Bypass                    (forbidden-path bypass techniques)
+ L   Leak / Secret Finder          (exposed keys, tokens, .git/.env)
+ P   Path Traversal / LFI          (parameter file-read fuzzing)
+ S   SSRF                          (cloud-metadata probing)
+ C   Content Discovery             (hidden paths / panels / backups)
+ T   Task Tree                     (persistent engagement leads)
+ M   MITRE ATT&CK Map              (+ AI kill-chain narrative)
+ O   OPSEC Profile                 (stealth / passive / proxy)
  0   Exit
 ```
-After an Nmap scan, the findings stay in memory — CVE analysis, Nuclei and the AI
-report all chain off that scan.
+After an Nmap scan, the findings stay in memory — CVE analysis, Nuclei, the AI report
+and the ATT&CK map all chain off that scan, and every finding feeds the persistent task
+tree.
 
 **Autopilot — full engagement in one command:**
 ```bash
-python silentpivot.py -t target.com --auto -f html
+silentpivot -t target.com --auto -f html
 ```
 
 **CLI / automation:**
 ```bash
-python silentpivot.py -t scanme.nmap.org -s deep -f json -o report.json
-python silentpivot.py -t 10.0.0.5 -s fast --no-ai --quiet
+silentpivot -t scanme.nmap.org -s deep -f json -o report.json
+silentpivot -t 10.0.0.5 -s fast --no-ai --quiet
+```
+
+Routing through a proxy (keeps nmap's packets covered too):
+```bash
+proxychains4 silentpivot -t target.com --auto
 ```
 
 | Flag | Description |
@@ -151,25 +184,53 @@ xdg-open data/*.html      # or: firefox data/*.html
 ## 📂 Project structure
 
 ```
-silentpivot/
-├── silentpivot.py         # Entry point (panel + CLI)
-├── modules/
+SilentPivot/
+├── pyproject.toml         # Packaging + entry point (silentpivot command)
+├── silentpivot/           # The importable package
+│   ├── cli.py             # Entry point (panel + CLI / argparse)
+│   ├── __main__.py        # Enables `python -m silentpivot`
 │   ├── panel.py           # Interactive command center
 │   ├── ui.py              # Shared UI (console, colors, tables)
+│   ├── validators.py      # Single source of input validation
+│   ├── opsec.py           # OPSEC/stealth profile + proxy + body caps
 │   ├── autopilot.py       # Full-engagement orchestrator
 │   ├── scanner.py         # Nmap integration + scan context
 │   ├── subdomain.py       # Hybrid subdomain discovery
 │   ├── portcheck.py       # Native TCP port check
 │   ├── webprobe.py        # HTTP fingerprinting + WAF detection
 │   ├── nuclei.py          # Nuclei wrapper
+│   ├── bypass403.py       # 403 forbidden-path bypass
+│   ├── leakfinder.py      # Exposed secrets/files
+│   ├── pathtraversal.py   # Path traversal / LFI
+│   ├── ssrf.py            # SSRF (cloud metadata)
+│   ├── contentdisco.py    # Content discovery (ffuf/gobuster/python)
 │   ├── vuln_checker.py    # NVD (CPE) + CVSS matching
 │   ├── kev.py             # CISA KEV catalog
 │   ├── exploits.py        # EPSS + PoC + ExploitDB intel
+│   ├── attack_map.py      # MITRE ATT&CK technique mapping
 │   ├── ai_engine.py       # LLM analysis engine
+│   ├── tasktree.py        # Persistent engagement task tree
 │   └── reporter.py        # MD / JSON / HTML reports
-├── scripts/selftest.py    # Live self-test of every module
-└── data/                  # Auto-generated reports (gitignored)
+├── tests/                 # Offline unit tests + opt-in live checks (pytest)
+├── scripts/selftest.py    # Live end-to-end self-test of every module
+└── data/                  # Auto-generated reports + engagements (gitignored)
 ```
+
+---
+
+## 🧪 Testing
+
+```bash
+pip install -e ".[dev]"    # pull in pytest
+
+pytest                     # offline unit tests — fast, deterministic (what CI runs)
+pytest -m live             # opt-in live checks against real sources (needs network)
+python scripts/selftest.py # full live end-to-end self-test with a readable report
+```
+
+The offline suite covers the parsers, detectors, input validation, the persistent task
+tree, and the ReDoS time-budget regression guard. Live checks (NVD, KEV, EPSS, DNS,
+HTTP) are excluded from the default run so it stays hermetic.
 
 ---
 

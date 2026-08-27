@@ -5,12 +5,12 @@ otherwise the caller is told it is unavailable and can degrade gracefully.
 nuclei ships thousands of community templates (CVEs, misconfigurations, exposed
 panels, default creds, secrets), which is what turns recon into real findings.
 """
+import json
 import os
 import re
-import json
 import shutil
-import tempfile
 import subprocess
+import tempfile
 
 SEVERITY_ORDER = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0, "UNKNOWN": -1}
 _TEMPLATES_RE = re.compile(r"Templates loaded for current scan:\s*(\d+)")

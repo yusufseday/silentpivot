@@ -1,14 +1,13 @@
-import sys
 import argparse
+import sys
 
-from modules import ui
-from modules import validators
-from modules.ui import console, print_summary_table
-from modules.scanner import NetworkScanner, SCAN_LABELS
-from modules.ai_engine import SilentAI
-from modules.vuln_checker import VulnChecker
-from modules import reporter
 from rich.markdown import Markdown
+
+from silentpivot import reporter, ui, validators
+from silentpivot.ai_engine import SilentAI
+from silentpivot.scanner import SCAN_LABELS, NetworkScanner
+from silentpivot.ui import console, print_summary_table
+from silentpivot.vuln_checker import VulnChecker
 
 # Scan type: usable by both number (1/2/3) and name.
 SCAN_ALIASES = {
@@ -86,7 +85,7 @@ def run_cli(args):
 
 
 def run_autopilot_cli(args):
-    from modules.autopilot import run_autopilot
+    from silentpivot.autopilot import run_autopilot
     scan_type = SCAN_ALIASES.get(str(args.scan_type).lower())
     if scan_type is None:
         ui.error(f"Invalid scan type: {args.scan_type}")
@@ -140,7 +139,7 @@ def main():
         run_cli(args)  # arguments given -> automation/CLI mode
     else:
         # No arguments -> interactive command center
-        from modules.panel import CommandCenter
+        from silentpivot.panel import CommandCenter
         try:
             CommandCenter().run()
         except (KeyboardInterrupt, EOFError):

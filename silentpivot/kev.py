@@ -1,6 +1,7 @@
-import os
 import json
+import os
 import time
+
 import requests
 
 # CISA Known Exploited Vulnerabilities (KEV) — the official catalog of CVEs
@@ -40,7 +41,7 @@ class KevCatalog:
             if os.path.exists(self.cache_path):
                 age = time.time() - os.path.getmtime(self.cache_path)
                 if age < _CACHE_TTL:
-                    with open(self.cache_path, "r", encoding="utf-8") as f:
+                    with open(self.cache_path, encoding="utf-8") as f:
                         return json.load(f)
         except Exception:
             pass
