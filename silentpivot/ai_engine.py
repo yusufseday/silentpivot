@@ -10,7 +10,9 @@ load_dotenv()
 # in .env — Groq (fast, free), OpenAI/Claude (strongest reasoning), Ollama (local &
 # private — keeps sensitive scan data on your machine), OpenRouter (many models).
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+# Groq rotates its catalogue, so this is just a currently-live default — override it with
+# AI_MODEL in .env. List what your key can use: GET {AI_BASE_URL}/models.
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 # Shared rule: models like to invent plausible-sounding tool syntax (e.g. a SQLMap
 # "module" that doesn't exist). Operators act on these lines, so wrong syntax is worse

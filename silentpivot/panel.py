@@ -2,7 +2,7 @@
 Launched when the program is run without arguments; drives every tool from one menu."""
 import glob
 import os
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from rich.markdown import Markdown
 from rich.panel import Panel as RichPanel
@@ -189,16 +189,36 @@ class CommandCenter:
         self.tree.save()
         return self.tree
 
+    def _pick_engagement(self):
+        """Show saved engagements as a numbered table and return the chosen target,
+        or None if there's nothing to pick or the user cancels."""
+        saved = TaskTree.list_engagements()
+        if not saved:
+            ui.warn("No engagement history yet — run some recon first.")
+            return None
+        t = Table(title="Engagement History")
+        t.add_column("#", justify="right", style="cyan")
+        t.add_column("Target")
+        t.add_column("Open", justify="right", style="yellow")
+        t.add_column("Done", justify="right", style="green")
+        for i, name in enumerate(saved, 1):
+            s = TaskTree(name).summary()
+            t.add_row(str(i), name, str(s[OPEN]), str(s[DONE]))
+        console.print(t)
+        sel = Prompt.ask("Pick # (blank to cancel)", default="").strip()
+        if sel.isdigit() and 1 <= int(sel) <= len(saved):
+            return saved[int(sel) - 1]
+        return None
+
     def tool_tasktree(self):
-        target = validators.valid_target(
-            Prompt.ask("Target (blank = current)", default=self.last_target or ""))
+        raw = Prompt.ask("Target (blank = current or pick from history)",
+                         default=self.last_target or "").strip()
+        target = validators.valid_target(raw) if raw else None
         if not target:
-            saved = TaskTree.list_engagements()
-            if not saved:
-                ui.warn("No engagement history yet — run some recon first.")
+            # No usable target typed — let the operator choose a past engagement.
+            target = self._pick_engagement()
+            if not target:
                 return
-            ui.error(f"Invalid or missing target. Known engagements: {', '.join(saved)}")
-            return
         self.last_target = self.last_target or target
         tree = self.tree if (self.tree and self.tree.target == target) else TaskTree(target)
         self.tree = tree
@@ -1086,14 +1106,16 @@ class CommandCenter:
         t.add_column("File")
         t.add_column("Size", justify="right")
         for i, f in enumerate(files[:20], 1):
-            # Clickable file link on the name — click opens the report directly.
+            # Clickable file link on the name — Ctrl/Cmd+click opens the report directly.
+            # href is percent-encoded so '(' ')' in report names don't break the link.
             abs_f = os.path.abspath(f).replace("\\", "/")
-            name = f"[link=file:///{abs_f.lstrip('/')}]{ui.safe(os.path.basename(f))}[/link]"
+            href = "file:///" + quote(abs_f.lstrip("/"))
+            name = f"[link={href}]{ui.safe(os.path.basename(f))}[/link]"
             t.add_row(str(i), name, f"{os.path.getsize(f)} B")
         console.print(t)
-        console.print("[dim]Enter a # to open (HTML opens in browser), or e<#> to "
-                      "export (e.g. 'e2') to HTML/MD[/dim]")
-        sel = Prompt.ask("Open / export # (blank to skip)", default="").strip().lower()
+        console.print("[dim]Enter a # to open (HTML opens in browser) · e<#> export to "
+                      "HTML/MD (e.g. 'e2') · d<#> delete (e.g. 'd2')[/dim]")
+        sel = Prompt.ask("Open / export / delete # (blank to skip)", default="").strip().lower()
 
         # Export: re-render a saved report to another format from its JSON — no re-scan.
         if sel.startswith("e") and sel[1:].isdigit():
@@ -1108,6 +1130,27 @@ class CommandCenter:
             fmt = Prompt.ask("Export to", choices=["html", "md"], default="html")
             new_path = reporter.export_saved(json_path, fmt)
             ui.success(f"Exported: {ui.file_link(new_path)}")
+            return
+
+        # Delete: remove the selected report and its JSON sidecar (with confirmation).
+        if sel.startswith("d") and sel[1:].isdigit():
+            idx = int(sel[1:])
+            if not (1 <= idx <= len(files)):
+                return
+            path = files[idx - 1]
+            if not Confirm.ask(f"Delete {os.path.basename(path)} (and its .json data)?",
+                               default=False):
+                ui.info("Cancelled — nothing deleted.")
+                return
+            removed = []
+            for p in (path, os.path.splitext(path)[0] + ".json"):
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                        removed.append(os.path.basename(p))
+                except OSError as e:
+                    ui.error(f"Couldn't delete {os.path.basename(p)}: {e}")
+            ui.success(f"Deleted: {', '.join(removed)}" if removed else "Nothing to delete.")
             return
 
         if sel.isdigit() and 1 <= int(sel) <= len(files):

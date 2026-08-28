@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from urllib.parse import quote
 
 from rich.console import Console
 from rich.markup import escape as _escape
@@ -98,9 +99,13 @@ def print_summary_table(results, title="Scan Summary"):
 def file_link(path: str) -> str:
     """rich markup for a local file. Shows the ABSOLUTE path as the visible text so it
     is copy/paste-ready (and auto-detected) even in terminals without OSC-8 support,
-    while still being a real file:// hyperlink in terminals that do support it."""
+    while still being a real file:// hyperlink (Ctrl/Cmd+click) in terminals that do.
+
+    The href is percent-encoded: report names contain '(' ')' and spaces, which
+    otherwise truncate the OSC-8 link and stop the terminal from making it clickable."""
     abs_path = os.path.abspath(path).replace("\\", "/")
-    return f"[link=file:///{abs_path.lstrip('/')}]{abs_path}[/link]"
+    href = "file:///" + quote(abs_path.lstrip("/"))
+    return f"[link={href}]{abs_path}[/link]"
 
 
 def open_path(path: str) -> bool:
