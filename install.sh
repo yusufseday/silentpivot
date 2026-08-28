@@ -44,9 +44,9 @@ ok "Python: $(python3 --version 2>&1)"
 if ! command -v pipx >/dev/null 2>&1 && ! python3 -m pipx --version >/dev/null 2>&1; then
     info "Installing pipx..."
     if command -v apt-get >/dev/null 2>&1; then
-        $SUDO apt-get install -y pipx || python3 -m pip install --user pipx
+        $SUDO apt-get install -y pipx || python3 -m pip install --user -q --disable-pip-version-check pipx
     else
-        python3 -m pip install --user pipx
+        python3 -m pip install --user -q --disable-pip-version-check pipx
     fi
 fi
 # ensurepath adds pipx's bin dir to PATH (takes effect in new shells).
@@ -56,9 +56,9 @@ ok "pipx ready"
 # ---- 3. Install SilentPivot (editable → tracks git pull) ------------------
 info "Installing silentpivot (global, editable)..."
 if python3 -m pipx --version >/dev/null 2>&1; then
-    python3 -m pipx install --editable . --force
+    python3 -m pipx install --editable . --force --quiet
 else
-    pipx install --editable . --force
+    pipx install --editable . --force --quiet
 fi
 ok "silentpivot installed"
 

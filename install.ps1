@@ -53,13 +53,19 @@ Ok "Python found: $ver"
 
 # ---- 2. pipx --------------------------------------------------------------
 Info "Ensuring pipx..."
-& $PyExe @PyPre -m pip install --user --upgrade pipx
-& $PyExe @PyPre -m pipx ensurepath | Out-Null
+& $PyExe @PyPre -m pip install --user --upgrade --quiet --disable-pip-version-check pipx
+# ensurepath writes an informational note to stderr when PATH is already configured.
+# Under ErrorActionPreference=Stop, redirecting a native command's stderr raises a
+# NativeCommandError, so soften the preference just for this tolerant, idempotent call.
+$eap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $PyExe @PyPre -m pipx ensurepath 2>&1 | Out-Null
+$ErrorActionPreference = $eap
 Ok "pipx ready"
 
 # ---- 3. Install SilentPivot (editable, so it tracks git pull) -------------
 Info "Installing silentpivot (global, editable)..."
-& $PyExe @PyPre -m pipx install --editable . --force
+& $PyExe @PyPre -m pipx install --editable . --force --quiet
 Ok "silentpivot installed"
 
 # ---- 4. .env --------------------------------------------------------------
