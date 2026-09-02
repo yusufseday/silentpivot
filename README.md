@@ -19,7 +19,7 @@ Signal over noise, verified data over guesses, graceful behaviour on any network
 
 ---
 
-## ✨ Features
+## Features
 
 **Recon**
 - **Nmap scanning** — service/version detection with sane defaults (`-Pn`, top-1000, IPv6-aware, host-timeout).
@@ -58,7 +58,7 @@ Signal over noise, verified data over guesses, graceful behaviour on any network
 
 ---
 
-## 🧭 How it works (Autopilot pipeline)
+## How it works (Autopilot pipeline)
 
 ```
 Target
@@ -75,7 +75,7 @@ Each stage is isolated — if one fails, the pipeline degrades gracefully instea
 
 ---
 
-## 🛠️ Prerequisites
+## Prerequisites
 
 - **Python 3.8+**
 - **Nmap** on your PATH — for the nmap scan module. ([Download](https://nmap.org/download.html))
@@ -84,7 +84,7 @@ Each stage is isolated — if one fails, the pipeline degrades gracefully instea
 
 ---
 
-## 📦 Installation
+## Installation
 
 ### Quick install (recommended)
 
@@ -139,7 +139,7 @@ python scripts/selftest.py         # live end-to-end check of every module
 
 ---
 
-## 🎯 Usage
+## Usage
 
 **Interactive panel (default):**
 ```bash
@@ -205,7 +205,7 @@ xdg-open data/*.html      # or: firefox data/*.html
 
 ---
 
-## 📂 Project structure
+## Project structure
 
 ```
 SilentPivot/
@@ -245,7 +245,7 @@ SilentPivot/
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 pip install -e ".[dev]"    # pull in pytest
